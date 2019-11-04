@@ -1,0 +1,40 @@
+
+/*
+For generating the customer.pb.bin file from customer.proto use the following command
+from the repo's top level directory.
+
+protoc --include_imports \
+    --proto_path=pb --proto_path=generator/testdata \
+    --descriptor_set_out=generator/testdata/customer.pb.bin generator/testdata/customer.proto
+*/
+
+syntax = "proto2";
+
+import "yara.proto";
+
+option (yara.module_options) = {
+  name : "pb_customer"
+  root_message: "Customer";
+};
+
+
+message CreditCard {
+  required string number = 1;
+  message Expiration {
+      optional int32 year = 1;
+      optional int32 month = 2;
+  }
+  optional Expiration expiration = 2;
+  enum Status {
+    VALID = 0;
+    CANCELLED = 1;
+  }
+  optional Status status = 3;
+}
+
+message Customer {
+  optional string name = 1;
+  optional int32 age = 2;
+  repeated CreditCard credit_cards = 3;
+  optional bool premium = 4;
+}
