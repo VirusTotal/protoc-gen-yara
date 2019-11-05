@@ -27,6 +27,7 @@ func plugin(req *plugins.CodeGenRequest, resp *plugins.CodeGenResponse) error {
 		if err := g.Parse(f, o); err != nil {
 			return err
 		}
+		resp.OutputFile("yara.")
 	}
 	return nil
 }

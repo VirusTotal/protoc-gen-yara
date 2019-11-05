@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package yara;
+
+import "google/protobuf/descriptor.proto";
+
+message ModuleOptions {
+  string name = 1;
+  string root_message = 2;
+}
+
+extend google.protobuf.FileOptions {
+  ModuleOptions module_options = 51503;
+}
