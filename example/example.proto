@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+import "yara.proto";
+
+option (yara.module_options) = {
+  name : "pb_person"
+  root_message: "Person";
+};
+
+
+message Person {
+  string name = 1;
+  int32 age = 2;
+}
