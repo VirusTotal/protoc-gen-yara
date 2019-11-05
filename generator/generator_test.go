@@ -23,7 +23,7 @@ func loadFile(t *testing.T, name string) []byte {
 
 func TestProto2(t *testing.T) {
 	fds := &pb.FileDescriptorSet{}
-	err := proto.Unmarshal(loadFile(t, "customer.pb.bin"), fds)
+	err := proto.Unmarshal(loadFile(t, "test_proto2.pb.bin"), fds)
 	assert.NoError(t, err)
 
 	fd, err := desc.CreateFileDescriptorFromSet(fds)
@@ -33,5 +33,5 @@ func TestProto2(t *testing.T) {
 	g := NewGenerator()
 	g.Parse(fd, out)
 
-	assert.Equal(t, string(loadFile(t, "customer.c")), out.String())
+	assert.Equal(t, string(loadFile(t, "test_proto2.c")), out.String())
 }

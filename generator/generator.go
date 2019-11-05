@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	yara "github.com/VirusTotal/protoc-gen-yara/pb"
-	proto "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/protoc-gen-go/descriptor"
 	pb "github.com/golang/protobuf/protoc-gen-go/descriptor"
 	"github.com/jhump/protoreflect/desc"
 )
@@ -45,7 +45,6 @@ var loopVars = []string{
 // use that data in your rules.
 //
 type Generator struct {
-	fd                *desc.FileDescriptor
 	protoName         string
 	moduleName        string
 	rootMessageName   string
@@ -306,52 +305,64 @@ func (g *Generator) emitStructInitialization(d *desc.MessageDescriptor, path str
 	return nil
 }
 
+var E_ModuleName = &proto.ExtensionDesc{
+	ExtendedType:  (*descriptor.FileOptions)(nil),
+	ExtensionType: (*string)(nil),
+	Field:         55000,
+	Name:          "yara_module_name",
+	Tag:           "bytes,55000,opt,name=yara_module_name",
+}
+
+var E_ModuleRootMessage = &proto.ExtensionDesc{
+	ExtendedType:  (*descriptor.FileOptions)(nil),
+	ExtensionType: (*string)(nil),
+	Field:         55001,
+	Name:          "yara_module_root_message",
+	Tag:           "bytes,55001,opt,name=yara_module_root_message",
+}
+
 // Parse receives an array of FileDescriptor structs, each of them corresponding
 // to a .proto file. Exactly one of those .proto files must define a YARA module
 // by including the following options:
 //
-//   option (yara.module_options) = {
-//	   name : "foomodule"
-//	   root_message: "FooMessage";
-//   };
+// extend google.protobuf.FileOptions {
+//    string yara_module_name = 55000;
+//    string yara_module_root_message = 55001;
+// }
+//
+// option (yara_module_name) = "example";
+// option (yara_module_root_message) = "Customer";
 //
 // The source code for the corresponding YARA module is written to the provided
 // io.Writer.
 func (g *Generator) Parse(fd *desc.FileDescriptor, out io.Writer) error {
 	fileOptions := fd.GetOptions()
-	// YARA module options appear as a extension of google.protobuf.FileOptions.
-	// E_ModuleOptions provides the description for the extension.
-	if ext, err := proto.GetExtension(fileOptions, yara.E_ModuleOptions); err == nil {
-		opts := ext.(*yara.ModuleOptions)
-		g.moduleName = opts.GetName()
-		g.rootMessageName = opts.GetRootMessage()
-		g.fd = fd
-		g.protoName = fd.GetName()
-		if g.moduleName == "" {
-			return fmt.Errorf(
-				"YARA module options found in %s, but name not specified",
-				g.protoName)
-		}
-		if g.rootMessageName == "" {
-			return fmt.Errorf(
-				"YARA module options found in %s, but root_message not specified",
-				g.protoName)
-		}
+	// YARA module options appear as a extensions of google.protobuf.FileOptions.
+	// E_ModuleName and E_ModuleRootMessage provide the description for the
+	// extensions
+	if ext, err := proto.GetExtension(fileOptions, E_ModuleName); err == nil {
+		g.moduleName = *ext.(*string)
 	}
-	if g.fd == nil {
-		return errors.New("could not find any YARA module options")
+	if ext, err := proto.GetExtension(fileOptions, E_ModuleRootMessage); err == nil {
+		g.rootMessageName = *ext.(*string)
+	}
+	if g.moduleName == "" {
+		return errors.New("could not find yara_module_name option")
+	}
+	if g.rootMessageName == "" {
+		return errors.New("could not find yara_module_root_message option")
 	}
 	// Search for the root message type specified by the root_message option.
-	g.rootMessageType = g.fd.FindMessage(g.rootMessageName)
+	g.rootMessageType = fd.FindMessage(g.rootMessageName)
 	if g.rootMessageType == nil {
 		return fmt.Errorf(
 			"root message type %s not found in %s",
 			g.rootMessageName, g.protoName)
 	}
-	if err := g.emitEnumDeclarations(g.fd); err != nil {
+	if err := g.emitEnumDeclarations(fd); err != nil {
 		return err
 	}
-	if err := g.emitEnumInitialization(g.fd); err != nil {
+	if err := g.emitEnumInitialization(fd); err != nil {
 		return err
 	}
 	if err := g.emitStructDeclaration(g.rootMessageType); err != nil {

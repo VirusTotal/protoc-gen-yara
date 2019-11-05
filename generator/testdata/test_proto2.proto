@@ -5,17 +5,20 @@ from the repo's top level directory.
 
 protoc --include_imports \
     --proto_path=pb --proto_path=generator/testdata \
-    --descriptor_set_out=generator/testdata/customer.pb.bin generator/testdata/customer.proto
+    --descriptor_set_out=generator/testdata/test_proto2.pb.bin generator/testdata/test_proto2.proto
 */
 
 syntax = "proto2";
 
-import "yara.proto";
+import "google/protobuf/descriptor.proto";
 
-option (yara.module_options) = {
-  name : "pb_customer"
-  root_message: "Customer";
-};
+extend google.protobuf.FileOptions {
+  optional string yara_module_name = 55000;
+  optional string yara_module_root_message = 55001;
+}
+
+option (yara_module_name) = "test_proto2";
+option (yara_module_root_message) = "Customer";
 
 
 message CreditCard {
