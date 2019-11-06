@@ -35,3 +35,18 @@ func TestProto2(t *testing.T) {
 
 	assert.Equal(t, string(loadFile(t, "test_pb2.c")), out.String())
 }
+
+func TestProto3(t *testing.T) {
+	fds := &pb.FileDescriptorSet{}
+	err := proto.Unmarshal(loadFile(t, "test_pb3.pb.bin"), fds)
+	assert.NoError(t, err)
+
+	fd, err := desc.CreateFileDescriptorFromSet(fds)
+	assert.NoError(t, err)
+
+	out := &bytes.Buffer{}
+	g := NewGenerator()
+	g.Parse(fd, out)
+
+	assert.Equal(t, string(loadFile(t, "test_pb3.c")), out.String())
+}

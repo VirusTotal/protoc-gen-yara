@@ -1,6 +1,6 @@
 
 /*
-For generating the customer.pb.bin file from customer.proto use the following command
+For generating the test_pb2.pb.bin file from test_pb2.proto use the following command
 from the repo's top level directory.
 
 protoc --include_imports \
@@ -13,28 +13,36 @@ syntax = "proto2";
 import "yara.proto";
 
 option (yara.module_options) = {
-  name : "pb_customer"
-  root_message: "Customer";
+  name : "test"
+  root_message: "Root";
 };
 
-
-message CreditCard {
-  required string number = 1;
-  message Expiration {
-      optional int32 year = 1;
-      optional int32 month = 2;
+message Struct {
+  required string f_string = 1;
+  message SubStruct {
+      optional int32 f_int32 = 1;
+      optional string f_string = 2;
   }
-  optional Expiration expiration = 2;
-  enum Status {
-    VALID = 0;
-    CANCELLED = 1;
+  optional SubStruct f_struct = 2;
+  enum Enum {
+    FIRST = 0;
+    SECOND = 1;
   }
-  optional Status status = 3;
+  optional Enum enum = 3;
 }
 
-message Customer {
-  optional string name = 1;
-  optional int32 age = 2;
-  repeated CreditCard credit_cards = 3;
-  optional bool premium = 4;
+message MapStruct {
+  optional int32 f_int32 = 1;
+  optional int64 f_int64 = 2;
+}
+
+message Root {
+  optional string f_string = 1;
+  optional int32 f_int32 = 2;
+  repeated Struct f_struct = 3;
+  optional bool f_bool = 4;
+  map<string, int32> f_map_int32 = 5;
+  map<string, bool> f_map_bool = 6;
+  map<string, string> f_map_string = 7;
+  map<string, MapStruct> f_map_struct = 8;
 }

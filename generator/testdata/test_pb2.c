@@ -4,7 +4,7 @@
 #include <yara/modules.h>
 #include "test_pb2.pb-c.h"
 
-#define MODULE_NAME pb_customer
+#define MODULE_NAME test
 
 static void* _pb_alloc(void *allocator_data, size_t size)
 {
@@ -17,23 +17,30 @@ static void _pb_free(void *allocator_data, void *pointer)
 }
 
 begin_declarations;
-  begin_struct("CreditCard");
-    begin_struct("Status");
-      declare_integer("VALID");
-      declare_integer("CANCELLED");
-    end_struct("Status");
-  end_struct("CreditCard");
-  declare_string("name");
-  declare_integer("age");
-  begin_struct_array("credit_cards");
-    declare_string("number");
-    begin_struct("expiration");
-      declare_integer("year");
-      declare_integer("month");
-    end_struct("expiration");
-    declare_integer("status");
-  end_struct_array("credit_cards");
-  declare_integer("premium");
+  begin_struct("Struct");
+    begin_struct("Enum");
+      declare_integer("FIRST");
+      declare_integer("SECOND");
+    end_struct("Enum");
+  end_struct("Struct");
+  declare_string("f_string");
+  declare_integer("f_int32");
+  begin_struct_array("f_struct");
+    declare_string("f_string");
+    begin_struct("f_struct");
+      declare_integer("f_int32");
+      declare_string("f_string");
+    end_struct("f_struct");
+    declare_integer("enum_");
+  end_struct_array("f_struct");
+  declare_integer("f_bool");
+  declare_integer_dictionary("f_map_int32");
+  declare_integer_dictionary("f_map_bool");
+  declare_string_dictionary("f_map_string");
+  begin_struct_dictionary("f_map_struct");
+    declare_integer("f_int32");
+    declare_integer("f_int64");
+  end_struct_dictionary("f_map_struct");
 end_declarations;
 
 int module_initialize(
@@ -65,47 +72,88 @@ int module_load(
   allocator.alloc = _pb_alloc;
   allocator.free = _pb_free;
 
-  Customer* pb = customer__unpack(&allocator, module_data_size, module_data);
+  Root* pb = root__unpack(&allocator, module_data_size, module_data);
 
   if (pb == NULL)
     return ERROR_INVALID_MODULE_DATA;
 
-  set_integer(0, module_object, "CreditCard.Status.VALID");
-  set_integer(1, module_object, "CreditCard.Status.CANCELLED");
-  set_string(pb->name, module_object, "name");
+  set_integer(0, module_object, "Struct.Enum.FIRST");
+  set_integer(1, module_object, "Struct.Enum.SECOND");
+  set_string(pb->f_string, module_object, "f_string");
 
-  if (pb->has_age) {
-    set_integer(pb->age, module_object, "age");
+  if (pb->has_f_int32) {
+    set_integer(pb->f_int32, module_object, "f_int32");
   }
 
-  for (int i = 0; i < pb->n_credit_cards; i++) {
+  for (int i = 0; i < pb->n_f_struct; i++) {
 
-    if (pb->credit_cards[i] != NULL) {
-      set_string(pb->credit_cards[i]->number, module_object, "credit_cards[%d].number", i);
+    if (pb->f_struct[i] != NULL) {
+      set_string(pb->f_struct[i]->f_string, module_object, "f_struct[%i].f_string", i);
 
-      if (pb->credit_cards[i]->expiration != NULL) {
+      if (pb->f_struct[i]->f_struct != NULL) {
 
-        if (pb->credit_cards[i]->expiration->has_year) {
-          set_integer(pb->credit_cards[i]->expiration->year, module_object, "credit_cards[%d].expiration.year", i);
+        if (pb->f_struct[i]->f_struct->has_f_int32) {
+          set_integer(pb->f_struct[i]->f_struct->f_int32, module_object, "f_struct[%i].f_struct.f_int32", i);
         }
-
-        if (pb->credit_cards[i]->expiration->has_month) {
-          set_integer(pb->credit_cards[i]->expiration->month, module_object, "credit_cards[%d].expiration.month", i);
-        }
+        set_string(pb->f_struct[i]->f_struct->f_string, module_object, "f_struct[%i].f_struct.f_string", i);
       }
 
-      if (pb->credit_cards[i]->has_status) {
-        set_integer(pb->credit_cards[i]->status, module_object, "credit_cards[%d].status", i);
+      if (pb->f_struct[i]->has_enum_) {
+        set_integer(pb->f_struct[i]->enum_, module_object, "f_struct[%i].enum_", i);
       }
     }
   }
 
-  if (pb->has_premium) {
-    set_integer(pb->premium, module_object, "premium");
+  if (pb->has_f_bool) {
+    set_integer(pb->f_bool, module_object, "f_bool");
+  }
+
+  for (int i = 0; i < pb->n_f_map_int32; i++) {
+
+    if (pb->f_map_int32[i] != NULL) {
+
+      if (pb->f_map_int32[i]->has_value) {
+        set_integer(pb->f_map_int32[i]->value, module_object, "f_map_int32[%s]", pb->f_map_int32[i]->key);
+      }
+    }
+  }
+
+  for (int i = 0; i < pb->n_f_map_bool; i++) {
+
+    if (pb->f_map_bool[i] != NULL) {
+
+      if (pb->f_map_bool[i]->has_value) {
+        set_integer(pb->f_map_bool[i]->value, module_object, "f_map_bool[%s]", pb->f_map_bool[i]->key);
+      }
+    }
+  }
+
+  for (int i = 0; i < pb->n_f_map_string; i++) {
+
+    if (pb->f_map_string[i] != NULL) {
+      set_string(pb->f_map_string[i]->value, module_object, "f_map_string[%s]", pb->f_map_string[i]->key);
+    }
+  }
+
+  for (int i = 0; i < pb->n_f_map_struct; i++) {
+
+    if (pb->f_map_struct[i] != NULL) {
+
+      if (pb->f_map_struct[i]->value != NULL) {
+
+        if (pb->f_map_struct[i]->value->has_f_int32) {
+          set_integer(pb->f_map_struct[i]->value->f_int32, module_object, "f_map_struct[%s].f_int32", pb->f_map_struct[i]->key);
+        }
+
+        if (pb->f_map_struct[i]->value->has_f_int64) {
+          set_integer(pb->f_map_struct[i]->value->f_int64, module_object, "f_map_struct[%s].f_int64", pb->f_map_struct[i]->key);
+        }
+      }
+    }
   }
 
 
-  customer__free_unpacked(pb, &allocator);
+  root__free_unpacked(pb, &allocator);
 
   return ERROR_SUCCESS;
 }
