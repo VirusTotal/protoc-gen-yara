@@ -50,9 +50,10 @@ message Root {
   optional bool f_bool = 11;
   optional string f_string = 12;
   optional bytes f_bytes = 13;
-  map<string, int32> f_map_int32 = 14;
-  map<string, bool> f_map_bool = 15;
-  map<string, string> f_map_string = 16;
-  map<string, MapStruct> f_map_struct = 17;
-  repeated Struct f_struct = 18;
+  repeated Struct f_struct = 14;
+  map<string, int32> f_map_int32 = 15;
+  map<string, bool> f_map_bool = 16;
+  map<string, string> f_map_string = 17;
+  map<string, float> f_map_float = 18;
+  map<string, MapStruct> f_map_struct = 19;
 }

@@ -485,19 +485,28 @@ func (g *Generator) emitFieldInitialization(f *desc.FieldDescriptor) error {
 			g.prefixedField("n_"),
 			g.loopVar())
 		g.indentantionLevel++
-
+		defer func() {
+			g.indentantionLevel--
+			fmt.Fprintf(g.init, "%s}\n", g.indentation())
+		}()
 	case pb.FieldDescriptorProto_LABEL_OPTIONAL:
-		// If some "foo" field is optional (supported by proto2 only) the
-		// protoc-c compiler generates a "has_foo" field that indicates
-		// if the field was present in the data or not. This is done only
-		// for certain types like integers, for which there's no way of
-		// distinguishing between a zero value and a missing value.
-		if g.typeClass(f.GetType()) == typeInteger {
+		// In proto2 if some "foo" field is optional the protoc-c compiler
+		// generates a "has_foo" field that indicates if the field was present
+		// in the data or not. This is done only for certain types like integers,
+		// for which there's no way of distinguishing between the default value
+		// and a missing value. In proto3 all fields are optional by definition
+		// but the "has_foo" field is not generated, missing fields will have
+		// their default value.
+		if !f.GetFile().IsProto3() && g.typeClass(f.GetType()) == typeInteger {
 			fmt.Fprintf(g.init,
 				"\n%sif (%s) {\n",
 				g.indentation(),
 				g.prefixedField("has_"))
 			g.indentantionLevel++
+			defer func() {
+				g.indentantionLevel--
+				fmt.Fprintf(g.init, "%s}\n", g.indentation())
+			}()
 		}
 	}
 	switch g.typeClass(f.GetType()) {
@@ -551,16 +560,6 @@ func (g *Generator) emitFieldInitialization(f *desc.FieldDescriptor) error {
 		return fmt.Errorf(
 			"%s has type %s, which is not supported by YARA modules",
 			f.GetName(), f.GetType())
-	}
-	switch f.GetLabel() {
-	case pb.FieldDescriptorProto_LABEL_REPEATED:
-		g.indentantionLevel--
-		fmt.Fprintf(g.init, "%s}\n", g.indentation())
-	case pb.FieldDescriptorProto_LABEL_OPTIONAL:
-		if g.typeClass(f.GetType()) == typeInteger {
-			g.indentantionLevel--
-			fmt.Fprintf(g.init, "%s}\n", g.indentation())
-		}
 	}
 	return nil
 }
