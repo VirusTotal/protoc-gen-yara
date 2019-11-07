@@ -19,16 +19,17 @@ option (yara.module_options) = {
 
 message Struct {
   string f_string = 1;
-  message SubStruct {
-    int32 f_int32 = 1;
-    string f_string = 2;
-  }
-  SubStruct f_struct = 2;
   enum Enum {
     FIRST = 0;
     SECOND = 1;
   }
-  Enum enum = 3;
+  Enum enum = 2;
+  message NestedStruct {
+    int32 f_int32 = 1;
+    string f_string = 2;
+  }
+  NestedStruct f_nested_struct = 3;
+  NestedStruct f_nested_struct_array = 4;
 }
 
 message MapStruct {

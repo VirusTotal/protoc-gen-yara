@@ -34,11 +34,15 @@ begin_declarations;
   declare_string("f_bytes");
   begin_struct_array("f_struct");
     declare_string("f_string");
-    begin_struct("f_struct");
+    declare_integer("enum_");
+    begin_struct("f_nested_struct");
       declare_integer("f_int32");
       declare_string("f_string");
-    end_struct("f_struct");
-    declare_integer("enum_");
+    end_struct("f_nested_struct");
+    begin_struct_array("f_nested_struct_array");
+      declare_integer("f_int32");
+      declare_string("f_string");
+    end_struct_array("f_nested_struct_array");
   end_struct_array("f_struct");
   declare_integer_dictionary("f_map_int32");
   declare_integer_dictionary("f_map_bool");
@@ -122,16 +126,27 @@ int module_load(
     if (pb->f_struct[i] != NULL) {
       set_string(pb->f_struct[i]->f_string, module_object, "f_struct[%i].f_string", i);
 
-      if (pb->f_struct[i]->f_struct != NULL) {
-
-        if (pb->f_struct[i]->f_struct->has_f_int32) {
-          set_integer(pb->f_struct[i]->f_struct->f_int32, module_object, "f_struct[%i].f_struct.f_int32", i);
-        }
-        set_string(pb->f_struct[i]->f_struct->f_string, module_object, "f_struct[%i].f_struct.f_string", i);
-      }
-
       if (pb->f_struct[i]->has_enum_) {
         set_integer(pb->f_struct[i]->enum_, module_object, "f_struct[%i].enum_", i);
+      }
+
+      if (pb->f_struct[i]->f_nested_struct != NULL) {
+
+        if (pb->f_struct[i]->f_nested_struct->has_f_int32) {
+          set_integer(pb->f_struct[i]->f_nested_struct->f_int32, module_object, "f_struct[%i].f_nested_struct.f_int32", i);
+        }
+        set_string(pb->f_struct[i]->f_nested_struct->f_string, module_object, "f_struct[%i].f_nested_struct.f_string", i);
+      }
+
+      for (int j = 0; j < pb->f_struct[i]->n_f_nested_struct_array; j++) {
+
+        if (pb->f_struct[i]->f_nested_struct_array[j] != NULL) {
+
+          if (pb->f_struct[i]->f_nested_struct_array[j]->has_f_int32) {
+            set_integer(pb->f_struct[i]->f_nested_struct_array[j]->f_int32, module_object, "f_struct[%i].f_nested_struct_array[%i].f_int32", i, j);
+          }
+          set_string(pb->f_struct[i]->f_nested_struct_array[j]->f_string, module_object, "f_struct[%i].f_nested_struct_array[%i].f_string", i, j);
+        }
       }
     }
   }
