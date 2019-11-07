@@ -14,42 +14,11 @@ import (
 	"github.com/jhump/protoreflect/desc"
 )
 
-// INDENT are the characters used for indenting code.
-const INDENT = "  "
-
-var loopVars = []string{
-	"i", "j", "k", "l", "m",
-}
-
-type field struct {
-	name       string
-	isRepeated bool
-	isMap      bool
-}
-
-// Generator takes a file containing a FileDescriptorSet (a protocol buffer
-// defined in https://github.com/protocolbuffers/protobuf/blob/master/src/google/protobuf/descriptor.proto,
-// which contains the definition of some other protocol buffer) and generates
-// a YARA module for it.
-//
-// The data in a FileDescriptorSet defines one or more protocol buffers in the
-// same way that a set of .proto files would do, but the definiton it's encoded
-// as a protocol buffer itself.
-//
-// Instead of parsing .proto files for understanding the described protocol
-// buffers, you can simply unmarshall and process the definition encoded in a
-// FileDescriptorSet.
-//
-// The FileDescriptorSet for a proto can be generated with:
-//    protoc --descriptor_set_out=hello.descriptor.pb hello.proto
-//
-// The hello.descriptor.pb file will contain a description of hello.proto in
-// binary form, encoded as a FileDescriptorSet protocol buffer.
-//
-// By passing hello.descriptor.pb to this compiler you can generate a YARA module
-// that is able to read data encoded in the format defined by hello.proto and
-// use that data in your rules.
-//
+// Generator takes a FileDescriptor (a helper type which is just a thin wrapper
+// around a FileDescriptorProto) and a generates a YARA module for the protocol
+// buffer defined by the FileDescriptor. See:
+// https://godoc.org/github.com/jhump/protoreflect/desc#FileDescriptor
+// https://godoc.org/github.com/golang/protobuf/protoc-gen-go/descriptor#FileDescriptorProto
 type Generator struct {
 	fd                *desc.FileDescriptor
 	protoName         string
@@ -63,7 +32,7 @@ type Generator struct {
 	fieldStack        []field
 }
 
-// NewGenerator creates an new module compiler.
+// NewGenerator creates an new module generator.
 func NewGenerator() *Generator {
 	return &Generator{
 		indentantionLevel: 1,
@@ -71,6 +40,116 @@ func NewGenerator() *Generator {
 		init:              &strings.Builder{},
 		fieldStack:        make([]field, 0),
 	}
+}
+
+// Parse receive a FileDescriptor describing a .proto file and writes the source
+// code for the corresponding YARA module into the provided writer. The .proto
+// file must include a snippet similar to the one below.
+//
+//   import "yara.proto"
+//
+//   option (yara.module_options) = {
+//	   name : "foomodule"
+//	   root_message: "FooMessage";
+//   };
+//
+// These options are required for the generator to be able to genereate the YARA
+// module.
+func (g *Generator) Parse(fd *desc.FileDescriptor, out io.Writer) error {
+	fileOptions := fd.GetOptions()
+	// YARA module options appear as a extension of google.protobuf.FileOptions.
+	// E_ModuleOptions provides the description for the extension.
+	if ext, err := proto.GetExtension(fileOptions, yara.E_ModuleOptions); err == nil {
+		opts := ext.(*yara.ModuleOptions)
+		g.moduleName = opts.GetName()
+		g.rootMessageName = opts.GetRootMessage()
+		g.fd = fd
+		g.protoName = fd.GetName()
+		if g.moduleName == "" {
+			return fmt.Errorf(
+				"YARA module options found in %s, but name not specified",
+				g.protoName)
+		}
+		if g.rootMessageName == "" {
+			return fmt.Errorf(
+				"YARA module options found in %s, but root_message not specified",
+				g.protoName)
+		}
+	}
+	if g.fd == nil {
+		return errors.New("could not find any YARA module options")
+	}
+	// Search for the root message type specified by the root_message option.
+	g.rootMessageType = g.fd.FindMessage(g.rootMessageName)
+	if g.rootMessageType == nil {
+		return fmt.Errorf(
+			"root message type %s not found in %s",
+			g.rootMessageName, g.protoName)
+	}
+	if err := g.emitEnumDeclarations(g.fd); err != nil {
+		return err
+	}
+	if err := g.emitEnumInitialization(g.fd); err != nil {
+		return err
+	}
+	if err := g.emitStructDeclaration(g.rootMessageType); err != nil {
+		return err
+	}
+	if err := g.emitStructInitialization(g.rootMessageType); err != nil {
+		return err
+	}
+	// Build template used for generating the final code.
+	tmpl, err := template.New("yara_module").
+		Funcs(template.FuncMap{
+			"ToLower": strings.ToLower,
+		}).
+		Parse(moduleTemplate)
+
+	if err != nil {
+		panic(err)
+	}
+
+	protoName := fd.GetName()
+
+	return tmpl.Execute(out, templateData{
+		ModuleName:      g.moduleName,
+		IncludeName:     strings.TrimSuffix(protoName, filepath.Ext(protoName)),
+		RootStruct:      g.rootMessageName,
+		Declarations:    template.HTML(g.decl.String()),
+		Initializations: template.HTML(g.init.String()),
+	})
+}
+
+type typeClass int
+
+const (
+	typeUnsupported typeClass = iota
+	typeInteger
+	typeString
+	typeFloat
+	typeStruct
+)
+
+func (g *Generator) typeClass(t pb.FieldDescriptorProto_Type) typeClass {
+	switch t {
+	case pb.FieldDescriptorProto_TYPE_BOOL,
+		pb.FieldDescriptorProto_TYPE_ENUM,
+		pb.FieldDescriptorProto_TYPE_INT32,
+		pb.FieldDescriptorProto_TYPE_INT64,
+		pb.FieldDescriptorProto_TYPE_SINT32,
+		pb.FieldDescriptorProto_TYPE_SINT64,
+		pb.FieldDescriptorProto_TYPE_SFIXED32,
+		pb.FieldDescriptorProto_TYPE_SFIXED64:
+		return typeInteger
+	case pb.FieldDescriptorProto_TYPE_STRING:
+		return typeString
+	case pb.FieldDescriptorProto_TYPE_FLOAT,
+		pb.FieldDescriptorProto_TYPE_DOUBLE:
+		return typeFloat
+	case pb.FieldDescriptorProto_TYPE_MESSAGE:
+		return typeStruct
+	}
+	return typeUnsupported
 }
 
 // Returns the descriptor's name, possibly adding an underscore at the end
@@ -94,185 +173,15 @@ func (g *Generator) cName(d desc.Descriptor) string {
 	return name
 }
 
-func (g *Generator) emitEnumDeclarations(d desc.Descriptor) error {
-	var enums []*desc.EnumDescriptor
-	var types []*desc.MessageDescriptor
-	switch v := d.(type) {
-	case *desc.FileDescriptor:
-		v.GetEnumTypes()
-		enums = v.GetEnumTypes()
-		types = v.GetMessageTypes()
-	case *desc.MessageDescriptor:
-		enums = v.GetNestedEnumTypes()
-		types = v.GetNestedMessageTypes()
-	default:
-		panic("Expecting *EnumDescriptor or *MessageDescriptor")
-	}
-	for _, e := range enums {
-		fmt.Fprintf(g.decl,
-			"%sbegin_struct(\"%s\");\n",
-			g.indentation(), g.cName(e))
-		for _, v := range e.GetValues() {
-			fmt.Fprintf(g.decl,
-				"%s%sdeclare_integer(\"%s\");\n",
-				g.indentation(), INDENT, g.cName(v))
-		}
-		fmt.Fprintf(g.decl,
-			"%send_struct(\"%s\");\n",
-			g.indentation(), g.cName(e))
-	}
-	for _, t := range types {
-		if len(t.GetNestedEnumTypes()) > 0 {
-			fmt.Fprintf(g.decl,
-				"%sbegin_struct(\"%s\");\n",
-				g.indentation(), g.cName(t))
-			g.indentantionLevel++
-			if err := g.emitEnumDeclarations(t); err != nil {
-				return err
-			}
-			g.indentantionLevel--
-			fmt.Fprintf(g.decl,
-				"%send_struct(\"%s\");\n",
-				g.indentation(), g.cName(t))
-		}
-	}
-	return nil
+// INDENT are the characters used for indenting code.
+const INDENT = "  "
+
+func (g *Generator) indentation() string {
+	return strings.Repeat(INDENT, g.indentantionLevel)
 }
 
-func (g *Generator) emitEnumInitialization(d desc.Descriptor) error {
-	var enums []*desc.EnumDescriptor
-	var types []*desc.MessageDescriptor
-	switch v := d.(type) {
-	case *desc.FileDescriptor:
-		enums = v.GetEnumTypes()
-		types = v.GetMessageTypes()
-	case *desc.MessageDescriptor:
-		enums = v.GetNestedEnumTypes()
-		types = v.GetNestedMessageTypes()
-	default:
-		panic("Expecting *EnumDescriptor or *MessageDescriptor")
-	}
-	indent := strings.Repeat(INDENT, g.indentantionLevel)
-	for _, e := range enums {
-		for _, v := range e.GetValues() {
-			fmt.Fprintf(g.init, "%sset_integer(%d, module_object, \"%s\");\n",
-				indent, v.GetNumber(), v.GetFullyQualifiedName())
-		}
-	}
-	for _, t := range types {
-		if err := g.emitEnumInitialization(t); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (g *Generator) emitDictDeclaration(f *desc.FieldDescriptor) error {
-	kt := f.GetMapKeyType()
-	vt := f.GetMapValueType()
-	if kt == nil || vt == nil {
-		panic("either 'key' or 'value' fields not found in a map entry ")
-	}
-	// Dictionaries in YARA modules must have string keys, other types of
-	// keys are not supported.
-	if kt.GetType() != pb.FieldDescriptorProto_TYPE_STRING {
-		return fmt.Errorf(
-			"maps with non-string keys are not supported, %s has %s keys",
-			f.GetName(), kt.GetType().String())
-	}
-	switch t := vt.GetType(); t {
-	case pb.FieldDescriptorProto_TYPE_BOOL,
-		pb.FieldDescriptorProto_TYPE_ENUM,
-		pb.FieldDescriptorProto_TYPE_INT32,
-		pb.FieldDescriptorProto_TYPE_INT64:
-		fmt.Fprintf(g.decl,
-			"%sdeclare_integer_dictionary(\"%s\");\n",
-			g.indentation(), g.cName(f))
-
-	case pb.FieldDescriptorProto_TYPE_FLOAT,
-		pb.FieldDescriptorProto_TYPE_DOUBLE:
-		fmt.Fprintf(g.decl,
-			"%sdeclare_float_dictionary(\"%s\");\n",
-			g.indentation(), g.cName(f))
-
-	case pb.FieldDescriptorProto_TYPE_STRING:
-		fmt.Fprintf(g.decl,
-			"%sdeclare_string_dictionary(\"%s\");\n",
-			g.indentation(), g.cName(f))
-
-	case pb.FieldDescriptorProto_TYPE_MESSAGE:
-		fmt.Fprintf(g.decl,
-			"%sbegin_struct_dictionary(\"%s\");\n",
-			g.indentation(), g.cName(f))
-		g.indentantionLevel++
-		if err := g.emitStructDeclaration(vt.GetMessageType()); err != nil {
-			return err
-		}
-		g.indentantionLevel--
-		fmt.Fprintf(g.decl,
-			"%send_struct_dictionary(\"%s\");\n",
-			g.indentation(), g.cName(f))
-
-	default:
-		return fmt.Errorf(
-			"%s has type %s, which is not supported by YARA modules",
-			f.GetName(), t)
-	}
-	return nil
-}
-
-func (g *Generator) emitStructDeclaration(m *desc.MessageDescriptor) error {
-	for _, f := range m.GetFields() {
-		var postfix string
-		if f.IsRepeated() {
-			postfix = "_array"
-		}
-		switch t := f.GetType(); t {
-		case pb.FieldDescriptorProto_TYPE_BOOL,
-			pb.FieldDescriptorProto_TYPE_ENUM,
-			pb.FieldDescriptorProto_TYPE_INT32,
-			pb.FieldDescriptorProto_TYPE_INT64:
-			fmt.Fprintf(g.decl,
-				"%sdeclare_integer%s(\"%s\");\n",
-				g.indentation(), postfix, g.cName(f))
-
-		case pb.FieldDescriptorProto_TYPE_FLOAT,
-			pb.FieldDescriptorProto_TYPE_DOUBLE:
-			fmt.Fprintf(g.decl,
-				"%sdeclare_float%s(\"%s\");\n",
-				g.indentation(), postfix, g.cName(f))
-
-		case pb.FieldDescriptorProto_TYPE_STRING:
-			fmt.Fprintf(g.decl,
-				"%sdeclare_string%s(\"%s\");\n",
-				g.indentation(), postfix, g.cName(f))
-
-		case pb.FieldDescriptorProto_TYPE_MESSAGE:
-			if f.IsMap() {
-				if err := g.emitDictDeclaration(f); err != nil {
-					return err
-				}
-			} else {
-				fmt.Fprintf(g.decl,
-					"%sbegin_struct%s(\"%s\");\n",
-					g.indentation(), postfix, g.cName(f))
-				g.indentantionLevel++
-				if err := g.emitStructDeclaration(f.GetMessageType()); err != nil {
-					return err
-				}
-				g.indentantionLevel--
-				fmt.Fprintf(g.decl,
-					"%send_struct%s(\"%s\");\n",
-					g.indentation(), postfix, g.cName(f))
-			}
-
-		default:
-			return fmt.Errorf(
-				"%s has type %s, which is not supported by YARA modules",
-				f.GetName(), t)
-		}
-	}
-	return nil
+var loopVars = []string{
+	"i", "j", "k", "l", "m",
 }
 
 func (g *Generator) loopVar() string {
@@ -293,8 +202,10 @@ func (g *Generator) exitLoop() {
 	g.loopLevel--
 }
 
-func (g *Generator) indentation() string {
-	return strings.Repeat(INDENT, g.indentantionLevel)
+type field struct {
+	name       string
+	isRepeated bool
+	isMap      bool
 }
 
 func (g *Generator) pushField(f *desc.FieldDescriptor) {
@@ -387,6 +298,171 @@ func (g *Generator) fmtArgsStr() string {
 	return ", " + strings.Join(ff, ", ")
 }
 
+func (g *Generator) emitEnumDeclarations(d desc.Descriptor) error {
+	var enums []*desc.EnumDescriptor
+	var types []*desc.MessageDescriptor
+	switch v := d.(type) {
+	case *desc.FileDescriptor:
+		v.GetEnumTypes()
+		enums = v.GetEnumTypes()
+		types = v.GetMessageTypes()
+	case *desc.MessageDescriptor:
+		enums = v.GetNestedEnumTypes()
+		types = v.GetNestedMessageTypes()
+	default:
+		panic("Expecting *EnumDescriptor or *MessageDescriptor")
+	}
+	for _, e := range enums {
+		fmt.Fprintf(g.decl,
+			"%sbegin_struct(\"%s\");\n",
+			g.indentation(), g.cName(e))
+		for _, v := range e.GetValues() {
+			fmt.Fprintf(g.decl,
+				"%s%sdeclare_integer(\"%s\");\n",
+				g.indentation(), INDENT, g.cName(v))
+		}
+		fmt.Fprintf(g.decl,
+			"%send_struct(\"%s\");\n",
+			g.indentation(), g.cName(e))
+	}
+	for _, t := range types {
+		if len(t.GetNestedEnumTypes()) > 0 {
+			fmt.Fprintf(g.decl,
+				"%sbegin_struct(\"%s\");\n",
+				g.indentation(), g.cName(t))
+			g.indentantionLevel++
+			if err := g.emitEnumDeclarations(t); err != nil {
+				return err
+			}
+			g.indentantionLevel--
+			fmt.Fprintf(g.decl,
+				"%send_struct(\"%s\");\n",
+				g.indentation(), g.cName(t))
+		}
+	}
+	return nil
+}
+
+func (g *Generator) emitEnumInitialization(d desc.Descriptor) error {
+	var enums []*desc.EnumDescriptor
+	var types []*desc.MessageDescriptor
+	switch v := d.(type) {
+	case *desc.FileDescriptor:
+		enums = v.GetEnumTypes()
+		types = v.GetMessageTypes()
+	case *desc.MessageDescriptor:
+		enums = v.GetNestedEnumTypes()
+		types = v.GetNestedMessageTypes()
+	default:
+		panic("Expecting *EnumDescriptor or *MessageDescriptor")
+	}
+	indent := strings.Repeat(INDENT, g.indentantionLevel)
+	for _, e := range enums {
+		for _, v := range e.GetValues() {
+			fmt.Fprintf(g.init, "%sset_integer(%d, module_object, \"%s\");\n",
+				indent, v.GetNumber(), v.GetFullyQualifiedName())
+		}
+	}
+	for _, t := range types {
+		if err := g.emitEnumInitialization(t); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (g *Generator) emitDictDeclaration(f *desc.FieldDescriptor) error {
+	kt := f.GetMapKeyType()
+	vt := f.GetMapValueType()
+	if kt == nil || vt == nil {
+		panic("either 'key' or 'value' fields not found in a map entry ")
+	}
+	// Dictionaries in YARA modules must have string keys, other types of
+	// keys are not supported.
+	if kt.GetType() != pb.FieldDescriptorProto_TYPE_STRING {
+		return fmt.Errorf(
+			"maps with non-string keys are not supported, %s has %s keys",
+			f.GetName(), kt.GetType().String())
+	}
+	switch g.typeClass(vt.GetType()) {
+	case typeInteger:
+		fmt.Fprintf(g.decl,
+			"%sdeclare_integer_dictionary(\"%s\");\n",
+			g.indentation(), g.cName(f))
+	case typeFloat:
+		fmt.Fprintf(g.decl,
+			"%sdeclare_float_dictionary(\"%s\");\n",
+			g.indentation(), g.cName(f))
+	case typeString:
+		fmt.Fprintf(g.decl,
+			"%sdeclare_string_dictionary(\"%s\");\n",
+			g.indentation(), g.cName(f))
+	case typeStruct:
+		fmt.Fprintf(g.decl,
+			"%sbegin_struct_dictionary(\"%s\");\n",
+			g.indentation(), g.cName(f))
+		g.indentantionLevel++
+		if err := g.emitStructDeclaration(vt.GetMessageType()); err != nil {
+			return err
+		}
+		g.indentantionLevel--
+		fmt.Fprintf(g.decl,
+			"%send_struct_dictionary(\"%s\");\n",
+			g.indentation(), g.cName(f))
+	default:
+		return fmt.Errorf(
+			"%s has type %s, which is not supported by YARA modules",
+			f.GetName(), f.GetType())
+	}
+	return nil
+}
+
+func (g *Generator) emitStructDeclaration(m *desc.MessageDescriptor) error {
+	for _, f := range m.GetFields() {
+		var postfix string
+		if f.IsRepeated() {
+			postfix = "_array"
+		}
+		switch g.typeClass(f.GetType()) {
+		case typeInteger:
+			fmt.Fprintf(g.decl,
+				"%sdeclare_integer%s(\"%s\");\n",
+				g.indentation(), postfix, g.cName(f))
+		case typeFloat:
+			fmt.Fprintf(g.decl,
+				"%sdeclare_float%s(\"%s\");\n",
+				g.indentation(), postfix, g.cName(f))
+		case typeString:
+			fmt.Fprintf(g.decl,
+				"%sdeclare_string%s(\"%s\");\n",
+				g.indentation(), postfix, g.cName(f))
+		case typeStruct:
+			if f.IsMap() {
+				if err := g.emitDictDeclaration(f); err != nil {
+					return err
+				}
+			} else {
+				fmt.Fprintf(g.decl,
+					"%sbegin_struct%s(\"%s\");\n",
+					g.indentation(), postfix, g.cName(f))
+				g.indentantionLevel++
+				if err := g.emitStructDeclaration(f.GetMessageType()); err != nil {
+					return err
+				}
+				g.indentantionLevel--
+				fmt.Fprintf(g.decl,
+					"%send_struct%s(\"%s\");\n",
+					g.indentation(), postfix, g.cName(f))
+			}
+		default:
+			return fmt.Errorf(
+				"%s has type %s, which is not supported by YARA modules",
+				f.GetName(), f.GetType())
+		}
+	}
+	return nil
+}
+
 func (g *Generator) emitFieldInitialization(f *desc.FieldDescriptor) error {
 	if f.IsRepeated() {
 		g.enterLoop()
@@ -413,11 +489,7 @@ func (g *Generator) emitFieldInitialization(f *desc.FieldDescriptor) error {
 		// if the field was present in the data or not. This is done only
 		// for certain types like integers, for which there's no way of
 		// distinguishing between a zero value and a missing value.
-		switch f.GetType() {
-		case pb.FieldDescriptorProto_TYPE_BOOL,
-			pb.FieldDescriptorProto_TYPE_ENUM,
-			pb.FieldDescriptorProto_TYPE_INT32,
-			pb.FieldDescriptorProto_TYPE_INT64:
+		if g.typeClass(f.GetType()) == typeInteger {
 			fmt.Fprintf(g.init,
 				"\n%sif (%s) {\n",
 				g.indentation(),
@@ -425,36 +497,29 @@ func (g *Generator) emitFieldInitialization(f *desc.FieldDescriptor) error {
 			g.indentantionLevel++
 		}
 	}
-	switch t := f.GetType(); t {
-	case pb.FieldDescriptorProto_TYPE_BOOL,
-		pb.FieldDescriptorProto_TYPE_ENUM,
-		pb.FieldDescriptorProto_TYPE_INT32,
-		pb.FieldDescriptorProto_TYPE_INT64:
+	switch g.typeClass(f.GetType()) {
+	case typeInteger:
 		fmt.Fprintf(g.init,
 			"%sset_integer(%s, module_object, \"%s\"%s);\n",
 			g.indentation(),
 			g.fieldSelector(),
 			g.fmtStr(),
 			g.fmtArgsStr())
-
-	case pb.FieldDescriptorProto_TYPE_FLOAT,
-		pb.FieldDescriptorProto_TYPE_DOUBLE:
+	case typeFloat:
 		fmt.Fprintf(g.init,
 			"%sset_float(%s, module_object, \"%s\"%s);\n",
 			g.indentation(),
 			g.fieldSelector(),
 			g.fmtStr(),
 			g.fmtArgsStr())
-
-	case pb.FieldDescriptorProto_TYPE_STRING:
+	case typeString:
 		fmt.Fprintf(g.init,
 			"%sset_string(%s, module_object, \"%s\"%s);\n",
 			g.indentation(),
 			g.fieldSelector(),
 			g.fmtStr(),
 			g.fmtArgsStr())
-
-	case pb.FieldDescriptorProto_TYPE_MESSAGE:
+	case typeStruct:
 		var err error
 		fmt.Fprintf(g.init,
 			"\n%sif (%s != NULL) {\n",
@@ -471,22 +536,17 @@ func (g *Generator) emitFieldInitialization(f *desc.FieldDescriptor) error {
 			return err
 		}
 		fmt.Fprintf(g.init, "%s}\n", g.indentation())
-
 	default:
 		return fmt.Errorf(
 			"%s has type %s, which is not supported by YARA modules",
-			f.GetName(), t)
+			f.GetName(), f.GetType())
 	}
 	switch f.GetLabel() {
 	case pb.FieldDescriptorProto_LABEL_REPEATED:
 		g.indentantionLevel--
 		fmt.Fprintf(g.init, "%s}\n", g.indentation())
 	case pb.FieldDescriptorProto_LABEL_OPTIONAL:
-		switch f.GetType() {
-		case pb.FieldDescriptorProto_TYPE_BOOL,
-			pb.FieldDescriptorProto_TYPE_ENUM,
-			pb.FieldDescriptorProto_TYPE_INT32,
-			pb.FieldDescriptorProto_TYPE_INT64:
+		if g.typeClass(f.GetType()) == typeInteger {
 			g.indentantionLevel--
 			fmt.Fprintf(g.init, "%s}\n", g.indentation())
 		}
@@ -501,80 +561,4 @@ func (g *Generator) emitStructInitialization(d *desc.MessageDescriptor) error {
 		}
 	}
 	return nil
-}
-
-// Parse receives an array of FileDescriptor structs, each of them corresponding
-// to a .proto file. Exactly one of those .proto files must define a YARA module
-// by including the following options:
-//
-//   option (yara.module_options) = {
-//	   name : "foomodule"
-//	   root_message: "FooMessage";
-//   };
-//
-// The source code for the corresponding YARA module is written to the provided
-// io.Writer.
-func (g *Generator) Parse(fd *desc.FileDescriptor, out io.Writer) error {
-	fileOptions := fd.GetOptions()
-	// YARA module options appear as a extension of google.protobuf.FileOptions.
-	// E_ModuleOptions provides the description for the extension.
-	if ext, err := proto.GetExtension(fileOptions, yara.E_ModuleOptions); err == nil {
-		opts := ext.(*yara.ModuleOptions)
-		g.moduleName = opts.GetName()
-		g.rootMessageName = opts.GetRootMessage()
-		g.fd = fd
-		g.protoName = fd.GetName()
-		if g.moduleName == "" {
-			return fmt.Errorf(
-				"YARA module options found in %s, but name not specified",
-				g.protoName)
-		}
-		if g.rootMessageName == "" {
-			return fmt.Errorf(
-				"YARA module options found in %s, but root_message not specified",
-				g.protoName)
-		}
-	}
-	if g.fd == nil {
-		return errors.New("could not find any YARA module options")
-	}
-	// Search for the root message type specified by the root_message option.
-	g.rootMessageType = g.fd.FindMessage(g.rootMessageName)
-	if g.rootMessageType == nil {
-		return fmt.Errorf(
-			"root message type %s not found in %s",
-			g.rootMessageName, g.protoName)
-	}
-	if err := g.emitEnumDeclarations(g.fd); err != nil {
-		return err
-	}
-	if err := g.emitEnumInitialization(g.fd); err != nil {
-		return err
-	}
-	if err := g.emitStructDeclaration(g.rootMessageType); err != nil {
-		return err
-	}
-	if err := g.emitStructInitialization(g.rootMessageType); err != nil {
-		return err
-	}
-	// Build template used for generating the final code.
-	tmpl, err := template.New("yara_module").
-		Funcs(template.FuncMap{
-			"ToLower": strings.ToLower,
-		}).
-		Parse(moduleTemplate)
-
-	if err != nil {
-		panic(err)
-	}
-
-	protoName := fd.GetName()
-
-	return tmpl.Execute(out, templateData{
-		ModuleName:      g.moduleName,
-		IncludeName:     strings.TrimSuffix(protoName, filepath.Ext(protoName)),
-		RootStruct:      g.rootMessageName,
-		Declarations:    template.HTML(g.decl.String()),
-		Initializations: template.HTML(g.init.String()),
-	})
 }

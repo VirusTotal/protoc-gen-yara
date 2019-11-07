@@ -23,8 +23,21 @@ begin_declarations;
       declare_integer("SECOND");
     end_struct("Enum");
   end_struct("Struct");
-  declare_string("f_string");
   declare_integer("f_int32");
+  declare_integer("f_int64");
+  declare_integer("f_sint32");
+  declare_integer("f_sint64");
+  declare_integer("f_sfixed32");
+  declare_integer("f_sfixed64");
+  declare_integer("f_bool");
+  declare_string("f_string");
+  declare_integer_dictionary("f_map_int32");
+  declare_integer_dictionary("f_map_bool");
+  declare_string_dictionary("f_map_string");
+  begin_struct_dictionary("f_map_struct");
+    declare_integer("f_int32");
+    declare_integer("f_int64");
+  end_struct_dictionary("f_map_struct");
   begin_struct_array("f_struct");
     declare_string("f_string");
     begin_struct("f_struct");
@@ -33,14 +46,6 @@ begin_declarations;
     end_struct("f_struct");
     declare_integer("enum_");
   end_struct_array("f_struct");
-  declare_integer("f_bool");
-  declare_integer_dictionary("f_map_int32");
-  declare_integer_dictionary("f_map_bool");
-  declare_string_dictionary("f_map_string");
-  begin_struct_dictionary("f_map_struct");
-    declare_integer("f_int32");
-    declare_integer("f_int64");
-  end_struct_dictionary("f_map_struct");
 end_declarations;
 
 int module_initialize(
@@ -79,34 +84,35 @@ int module_load(
 
   set_integer(0, module_object, "Struct.Enum.FIRST");
   set_integer(1, module_object, "Struct.Enum.SECOND");
-  set_string(pb->f_string, module_object, "f_string");
 
   if (pb->has_f_int32) {
     set_integer(pb->f_int32, module_object, "f_int32");
   }
 
-  for (int i = 0; i < pb->n_f_struct; i++) {
+  if (pb->has_f_int64) {
+    set_integer(pb->f_int64, module_object, "f_int64");
+  }
 
-    if (pb->f_struct[i] != NULL) {
-      set_string(pb->f_struct[i]->f_string, module_object, "f_struct[%i].f_string", i);
+  if (pb->has_f_sint32) {
+    set_integer(pb->f_sint32, module_object, "f_sint32");
+  }
 
-      if (pb->f_struct[i]->f_struct != NULL) {
+  if (pb->has_f_sint64) {
+    set_integer(pb->f_sint64, module_object, "f_sint64");
+  }
 
-        if (pb->f_struct[i]->f_struct->has_f_int32) {
-          set_integer(pb->f_struct[i]->f_struct->f_int32, module_object, "f_struct[%i].f_struct.f_int32", i);
-        }
-        set_string(pb->f_struct[i]->f_struct->f_string, module_object, "f_struct[%i].f_struct.f_string", i);
-      }
+  if (pb->has_f_sfixed32) {
+    set_integer(pb->f_sfixed32, module_object, "f_sfixed32");
+  }
 
-      if (pb->f_struct[i]->has_enum_) {
-        set_integer(pb->f_struct[i]->enum_, module_object, "f_struct[%i].enum_", i);
-      }
-    }
+  if (pb->has_f_sfixed64) {
+    set_integer(pb->f_sfixed64, module_object, "f_sfixed64");
   }
 
   if (pb->has_f_bool) {
     set_integer(pb->f_bool, module_object, "f_bool");
   }
+  set_string(pb->f_string, module_object, "f_string");
 
   for (int i = 0; i < pb->n_f_map_int32; i++) {
 
@@ -148,6 +154,25 @@ int module_load(
         if (pb->f_map_struct[i]->value->has_f_int64) {
           set_integer(pb->f_map_struct[i]->value->f_int64, module_object, "f_map_struct[%s].f_int64", pb->f_map_struct[i]->key);
         }
+      }
+    }
+  }
+
+  for (int i = 0; i < pb->n_f_struct; i++) {
+
+    if (pb->f_struct[i] != NULL) {
+      set_string(pb->f_struct[i]->f_string, module_object, "f_struct[%i].f_string", i);
+
+      if (pb->f_struct[i]->f_struct != NULL) {
+
+        if (pb->f_struct[i]->f_struct->has_f_int32) {
+          set_integer(pb->f_struct[i]->f_struct->f_int32, module_object, "f_struct[%i].f_struct.f_int32", i);
+        }
+        set_string(pb->f_struct[i]->f_struct->f_string, module_object, "f_struct[%i].f_struct.f_string", i);
+      }
+
+      if (pb->f_struct[i]->has_enum_) {
+        set_integer(pb->f_struct[i]->enum_, module_object, "f_struct[%i].enum_", i);
       }
     }
   }
