@@ -57,4 +57,8 @@ message Root {
   map<string, string> f_map_string = 17;
   map<string, float> f_map_float = 18;
   map<string, MapStruct> f_map_struct = 19;
+  oneof f_oneof {
+    string f_oneof_string = 20;
+    MapStruct f_oneof_struct = 21;
+  }
 }

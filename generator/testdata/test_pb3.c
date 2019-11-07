@@ -52,6 +52,11 @@ begin_declarations;
     declare_integer("f_int32");
     declare_integer("f_int64");
   end_struct_dictionary("f_map_struct");
+  declare_string("f_oneof_string");
+  begin_struct("f_oneof_struct");
+    declare_integer("f_int32");
+    declare_integer("f_int64");
+  end_struct("f_oneof_struct");
 end_declarations;
 
 int module_initialize(
@@ -151,6 +156,18 @@ int module_load(
         set_integer(pb->f_map_struct[i]->value->f_int32, module_object, "f_map_struct[%s].f_int32", pb->f_map_struct[i]->key);
         set_integer(pb->f_map_struct[i]->value->f_int64, module_object, "f_map_struct[%s].f_int64", pb->f_map_struct[i]->key);
       }
+    }
+  }
+
+  if (pb->f_oneof_case == 20) {
+    set_string(pb->f_oneof_string, module_object, "f_oneof_string");
+  }
+
+  if (pb->f_oneof_case == 21) {
+
+    if (pb->f_oneof_struct != NULL) {
+      set_integer(pb->f_oneof_struct->f_int32, module_object, "f_oneof_struct.f_int32");
+      set_integer(pb->f_oneof_struct->f_int64, module_object, "f_oneof_struct.f_int64");
     }
   }
 

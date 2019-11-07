@@ -231,10 +231,12 @@ func (g *Generator) fieldNames(n int) []string {
 		n = len(g.fieldStack)
 	}
 	result := make([]string, n)
+	loopDepth := 0
 	for i := 0; i < n; i++ {
 		f := g.fieldStack[i]
 		if f.isRepeated {
-			result[i] = fmt.Sprintf("%s[%s]", f.name, loopVars[i])
+			result[i] = fmt.Sprintf("%s[%s]", f.name, loopVars[loopDepth])
+			loopDepth++
 		} else {
 			result[i] = f.name
 		}
@@ -256,10 +258,8 @@ func (g *Generator) fieldSelector() string {
 	return g.fieldSelectorN(len(g.fieldStack))
 }
 
-func (g *Generator) prefixedField(prefix string) string {
-	names := append(
-		g.fieldNames(len(g.fieldStack)-1),
-		prefix+g.fieldStack[len(g.fieldStack)-1].name)
+func (g *Generator) fieldSelectorReplace(f string) string {
+	names := append(g.fieldNames(len(g.fieldStack)-1), f)
 	return "pb->" + strings.Join(names, "->")
 }
 
@@ -466,6 +466,11 @@ func (g *Generator) emitStructDeclaration(m *desc.MessageDescriptor) error {
 	return nil
 }
 
+func (g *Generator) closeBlock() {
+	g.indentantionLevel--
+	fmt.Fprintf(g.init, "%s}\n", g.indentation())
+}
+
 func (g *Generator) emitFieldInitialization(f *desc.FieldDescriptor) error {
 	if f.IsRepeated() {
 		g.enterLoop()
@@ -475,6 +480,19 @@ func (g *Generator) emitFieldInitialization(f *desc.FieldDescriptor) error {
 	g.pushField(f)
 	defer g.popField()
 
+	if oneof := f.GetOneOf(); oneof != nil {
+		fmt.Fprintf(g.init,
+			"\n%sif (%s == %d) {\n",
+			g.indentation(),
+			// Don't use g.cName here. If the name is a C keyword like "for",
+			// the final name is "for_case", not "for__case". The "_case"
+			// postfix already avoids the collision with the keyword.
+			g.fieldSelectorReplace(oneof.GetName()+"_case"),
+			f.GetNumber())
+		g.indentantionLevel++
+		defer g.closeBlock()
+	}
+
 	switch f.GetLabel() {
 	case pb.FieldDescriptorProto_LABEL_REPEATED:
 		fmt.Fprintf(g.init,
@@ -482,13 +500,13 @@ func (g *Generator) emitFieldInitialization(f *desc.FieldDescriptor) error {
 			g.indentation(),
 			g.loopVar(),
 			g.loopVar(),
-			g.prefixedField("n_"),
+			// Even if the "n_" prefix avoids any possible collision with a C
+			// keywords, the final name gets the underscore appended. If the
+			// name is "for", it gets converted to "n_for_".
+			g.fieldSelectorReplace("n_"+g.cName(f)),
 			g.loopVar())
 		g.indentantionLevel++
-		defer func() {
-			g.indentantionLevel--
-			fmt.Fprintf(g.init, "%s}\n", g.indentation())
-		}()
+		defer g.closeBlock()
 	case pb.FieldDescriptorProto_LABEL_OPTIONAL:
 		// In proto2 if some "foo" field is optional the protoc-c compiler
 		// generates a "has_foo" field that indicates if the field was present
@@ -501,14 +519,15 @@ func (g *Generator) emitFieldInitialization(f *desc.FieldDescriptor) error {
 			fmt.Fprintf(g.init,
 				"\n%sif (%s) {\n",
 				g.indentation(),
-				g.prefixedField("has_"))
+				// Even if the "has_" prefix avoids any possible collision with a C
+				// keywords, the final name gets the underscore appended. If the
+				// name is "for", it gets converted to "has_for_".
+				g.fieldSelectorReplace("has_"+g.cName(f)))
 			g.indentantionLevel++
-			defer func() {
-				g.indentantionLevel--
-				fmt.Fprintf(g.init, "%s}\n", g.indentation())
-			}()
+			defer g.closeBlock()
 		}
 	}
+
 	switch g.typeClass(f.GetType()) {
 	case typeInteger:
 		fmt.Fprintf(g.init,
@@ -546,16 +565,15 @@ func (g *Generator) emitFieldInitialization(f *desc.FieldDescriptor) error {
 			g.indentation(),
 			g.fieldSelector())
 		g.indentantionLevel++
+		defer g.closeBlock()
 		if f.IsMap() {
 			err = g.emitFieldInitialization(f.GetMapValueType())
 		} else {
 			err = g.emitStructInitialization(f.GetMessageType())
 		}
-		g.indentantionLevel--
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(g.init, "%s}\n", g.indentation())
 	default:
 		return fmt.Errorf(
 			"%s has type %s, which is not supported by YARA modules",
