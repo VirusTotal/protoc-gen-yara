@@ -31,6 +31,7 @@ begin_declarations;
   declare_integer("f_sfixed64");
   declare_integer("f_bool");
   declare_string("f_string");
+  declare_string("f_bytes");
   declare_integer_dictionary("f_map_int32");
   declare_integer_dictionary("f_map_bool");
   declare_string_dictionary("f_map_string");
@@ -113,6 +114,7 @@ int module_load(
     set_integer(pb->f_bool, module_object, "f_bool");
   }
   set_string(pb->f_string, module_object, "f_string");
+  set_sized_string((const char *) pb->f_bytes.data, pb->f_bytes.len, module_object, "f_bytes");
 
   for (int i = 0; i < pb->n_f_map_int32; i++) {
 

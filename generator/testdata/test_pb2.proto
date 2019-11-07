@@ -49,6 +49,7 @@ message Root {
   optional sfixed64 f_sfixed64 = 10;
   optional bool f_bool = 11;
   optional string f_string = 12;
+  optional bytes f_bytes = 13;
   map<string, int32> f_map_int32 = 14;
   map<string, bool> f_map_bool = 15;
   map<string, string> f_map_string = 16;

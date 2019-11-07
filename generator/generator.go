@@ -126,6 +126,7 @@ const (
 	typeUnsupported typeClass = iota
 	typeInteger
 	typeString
+	typeBytes
 	typeFloat
 	typeStruct
 )
@@ -143,6 +144,8 @@ func (g *Generator) typeClass(t pb.FieldDescriptorProto_Type) typeClass {
 		return typeInteger
 	case pb.FieldDescriptorProto_TYPE_STRING:
 		return typeString
+	case pb.FieldDescriptorProto_TYPE_BYTES:
+		return typeBytes
 	case pb.FieldDescriptorProto_TYPE_FLOAT,
 		pb.FieldDescriptorProto_TYPE_DOUBLE:
 		return typeFloat
@@ -393,7 +396,7 @@ func (g *Generator) emitDictDeclaration(f *desc.FieldDescriptor) error {
 		fmt.Fprintf(g.decl,
 			"%sdeclare_float_dictionary(\"%s\");\n",
 			g.indentation(), g.cName(f))
-	case typeString:
+	case typeString, typeBytes:
 		fmt.Fprintf(g.decl,
 			"%sdeclare_string_dictionary(\"%s\");\n",
 			g.indentation(), g.cName(f))
@@ -432,7 +435,7 @@ func (g *Generator) emitStructDeclaration(m *desc.MessageDescriptor) error {
 			fmt.Fprintf(g.decl,
 				"%sdeclare_float%s(\"%s\");\n",
 				g.indentation(), postfix, g.cName(f))
-		case typeString:
+		case typeString, typeBytes:
 			fmt.Fprintf(g.decl,
 				"%sdeclare_string%s(\"%s\");\n",
 				g.indentation(), postfix, g.cName(f))
@@ -516,6 +519,14 @@ func (g *Generator) emitFieldInitialization(f *desc.FieldDescriptor) error {
 		fmt.Fprintf(g.init,
 			"%sset_string(%s, module_object, \"%s\"%s);\n",
 			g.indentation(),
+			g.fieldSelector(),
+			g.fmtStr(),
+			g.fmtArgsStr())
+	case typeBytes:
+		fmt.Fprintf(g.init,
+			"%sset_sized_string((const char *) %s.data, %s.len, module_object, \"%s\"%s);\n",
+			g.indentation(),
+			g.fieldSelector(),
 			g.fieldSelector(),
 			g.fmtStr(),
 			g.fmtArgsStr())
