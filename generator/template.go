@@ -56,14 +56,14 @@ int module_load(
   if (module_data == NULL)
     return ERROR_SUCCESS;
 
-  {{ .RootStruct }}* pb = {{ .RootStruct | ToLower }}__unpack(&allocator, module_data_size, module_data);
+  {{ .RootStruct }}* pb = {{ .RootStruct | ToSnakeCase }}__unpack(&allocator, module_data_size, module_data);
 
   if (pb == NULL)
     return ERROR_INVALID_MODULE_DATA;
 
 {{ .Initializations }}
 
-  {{ .RootStruct | ToLower }}__free_unpacked(pb, &allocator);
+  {{ .RootStruct | ToSnakeCase }}__free_unpacked(pb, &allocator);
 
   return ERROR_SUCCESS;
 }

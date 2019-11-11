@@ -101,7 +101,7 @@ func (g *Generator) Parse(fd *desc.FileDescriptor, out io.Writer) error {
 	// Build template used for generating the final code.
 	tmpl, err := template.New("yara_module").
 		Funcs(template.FuncMap{
-			"ToLower": strings.ToLower,
+			"ToSnakeCase": CamelToSnakeCase,
 		}).
 		Parse(moduleTemplate)
 
