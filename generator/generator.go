@@ -54,7 +54,8 @@ func NewGenerator() *Generator {
 //   };
 //
 // These options are required for the generator to be able to genereate the YARA
-// module.
+// module. Notice that root_message must be a fully-qualified name. If your
+// protobuf is in a package, the name must be prefixed with the package name.
 func (g *Generator) Parse(fd *desc.FileDescriptor, out io.Writer) error {
 	fileOptions := fd.GetOptions()
 	// YARA module options appear as a extension of google.protobuf.FileOptions.

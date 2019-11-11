@@ -9,11 +9,13 @@ For example, let's suppose that you have the following protocol buffer definitio
 ```protobuf
 syntax = "proto3";
 
+package acme.payments;
+
 import "yara.proto";
 
 option (yara.module_options) = {
   name : "pb_customer"
-  root_message: "Customer";
+  root_message: "acme.payments.Customer";
 };
 
 message Customer {
@@ -57,12 +59,12 @@ import "yara.proto";
 
 option (yara.module_options) = {
   name : "pb_customer"
-  root_message: "Customer";
+  root_message: "acme.payments.Customer";
 };
 ```
 
 
-This is required for `protoc-gen-yara` to be able to generate the YARA module. The `yara.proto` file contains the definitions for the module's options, like `name` and `root_message`, so it must be imported in your proto. The `name` option contains the module's name (the one that you will later use in `import` statements in your YARA rules), while `root_message` is the name of a message defining the top-level structure for the module. You can have multiple message definitions in your proto file, but only one can be the root message. In the example above, as the root message is `Customer` and the module is named `pb_customer`, in your YARA rules you can access fields `name` and `age` as `pb_customer.name` and `pb_customer.age` respectively.
+This is required for `protoc-gen-yara` to be able to generate the YARA module. The `yara.proto` file contains the definitions for the module's options, like `name` and `root_message`, so it must be imported in your proto. The `name` option contains the module's name (the one that you will later use in `import` statements in your YARA rules), while `root_message` is the fully-qualified name of a message defining the top-level structure for the module. You can have multiple message definitions in your proto file, but only one can be the root message. In the example above, as the root message is `Customer` and the module is named `pb_customer`, in your YARA rules you can access fields `name` and `age` as `pb_customer.name` and `pb_customer.age` respectively.
 
 
 ### Installing protoc-gen-yara
@@ -113,3 +115,16 @@ Due to YARA limitations not all protocol buffers can generate a YARA module. The
 - Unsigned integers are not supported, your protocol buffer can not use types `uint32` ,`uint64`, `fixed32` and `fixed64`.
 - Maps are supported as long as the key is a string, no other key types are supported.
 - Can not declare recursive structures. In Protocol Buffers you can define a message `Foo` that has a field of type `Foo`, this is not possible in YARA modules.
+
+### Ignoring fields
+
+In some cases you may want `protocol-gen-yara` to ignore certain fields defined in your Protocol Buffer messages and not include them in the generated YARA module. This happens for example when the message defines some field of an unsupported type, and the simplest solution is simply excluding them from the module. This can be done by using the `ignore` custom option, like shown below.
+
+```proto
+message Customer {
+  string name = 1;
+  int32 age = 2;
+  fixed32 unwanted = 3 [(yara.field_options).ignore = true];
+}
+
+```
