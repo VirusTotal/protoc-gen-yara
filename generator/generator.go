@@ -20,25 +20,25 @@ import (
 // https://godoc.org/github.com/jhump/protoreflect/desc#FileDescriptor
 // https://godoc.org/github.com/golang/protobuf/protoc-gen-go/descriptor#FileDescriptorProto
 type Generator struct {
-	fd                *desc.FileDescriptor
-	protoName         string
-	moduleName        string
-	rootMessageName   string
-	rootMessageType   *desc.MessageDescriptor
-	decl              *strings.Builder
-	init              *strings.Builder
-	loopLevel         int
-	indentantionLevel int
-	fieldStack        []field
+	fd               *desc.FileDescriptor
+	protoName        string
+	moduleName       string
+	rootMessageName  string
+	rootMessageType  *desc.MessageDescriptor
+	decl             *strings.Builder
+	init             *strings.Builder
+	loopLevel        int
+	indentationLevel int
+	fieldStack       []field
 }
 
 // NewGenerator creates an new module generator.
 func NewGenerator() *Generator {
 	return &Generator{
-		indentantionLevel: 1,
-		decl:              &strings.Builder{},
-		init:              &strings.Builder{},
-		fieldStack:        make([]field, 0),
+		indentationLevel: 1,
+		decl:             &strings.Builder{},
+		init:             &strings.Builder{},
+		fieldStack:       make([]field, 0),
 	}
 }
 
@@ -180,7 +180,7 @@ func (g *Generator) cName(d desc.Descriptor) string {
 const INDENT = "  "
 
 func (g *Generator) indentation() string {
-	return strings.Repeat(INDENT, g.indentantionLevel)
+	return strings.Repeat(INDENT, g.indentationLevel)
 }
 
 var loopVars = []string{
@@ -348,11 +348,11 @@ func (g *Generator) emitEnumDeclarations(d desc.Descriptor) error {
 			fmt.Fprintf(g.decl,
 				"%sbegin_struct(\"%s\");\n",
 				g.indentation(), g.cName(t))
-			g.indentantionLevel++
+			g.indentationLevel++
 			if err := g.emitEnumDeclarations(t); err != nil {
 				return err
 			}
-			g.indentantionLevel--
+			g.indentationLevel--
 			fmt.Fprintf(g.decl,
 				"%send_struct(\"%s\");\n",
 				g.indentation(), g.cName(t))
@@ -374,7 +374,7 @@ func (g *Generator) emitEnumInitialization(d desc.Descriptor) error {
 	default:
 		panic("Expecting *EnumDescriptor or *MessageDescriptor")
 	}
-	indent := strings.Repeat(INDENT, g.indentantionLevel)
+	indent := strings.Repeat(INDENT, g.indentationLevel)
 	for _, e := range enums {
 		for _, v := range e.GetValues() {
 			fmt.Fprintf(g.init, "%sset_integer(%d, module_object, \"%s\");\n",
@@ -419,11 +419,11 @@ func (g *Generator) emitDictDeclaration(f *desc.FieldDescriptor) error {
 		fmt.Fprintf(g.decl,
 			"%sbegin_struct_dictionary(\"%s\");\n",
 			g.indentation(), g.cName(f))
-		g.indentantionLevel++
+		g.indentationLevel++
 		if err := g.emitStructDeclaration(vt.GetMessageType()); err != nil {
 			return err
 		}
-		g.indentantionLevel--
+		g.indentationLevel--
 		fmt.Fprintf(g.decl,
 			"%send_struct_dictionary(\"%s\");\n",
 			g.indentation(), g.cName(f))
@@ -466,11 +466,11 @@ func (g *Generator) emitStructDeclaration(m *desc.MessageDescriptor) error {
 				fmt.Fprintf(g.decl,
 					"%sbegin_struct%s(\"%s\");\n",
 					g.indentation(), postfix, g.cName(f))
-				g.indentantionLevel++
+				g.indentationLevel++
 				if err := g.emitStructDeclaration(f.GetMessageType()); err != nil {
 					return err
 				}
-				g.indentantionLevel--
+				g.indentationLevel--
 				fmt.Fprintf(g.decl,
 					"%send_struct%s(\"%s\");\n",
 					g.indentation(), postfix, g.cName(f))
@@ -486,7 +486,7 @@ func (g *Generator) emitStructDeclaration(m *desc.MessageDescriptor) error {
 }
 
 func (g *Generator) closeBlock() {
-	g.indentantionLevel--
+	g.indentationLevel--
 	fmt.Fprintf(g.init, "%s}\n", g.indentation())
 }
 
@@ -510,7 +510,7 @@ func (g *Generator) emitFieldInitialization(f *desc.FieldDescriptor) error {
 			// postfix already avoids the collision with the keyword.
 			g.fieldSelectorReplace(oneof.GetName()+"_case"),
 			f.GetNumber())
-		g.indentantionLevel++
+		g.indentationLevel++
 		defer g.closeBlock()
 	}
 
@@ -526,7 +526,7 @@ func (g *Generator) emitFieldInitialization(f *desc.FieldDescriptor) error {
 			// name is "for", it gets converted to "n_for_".
 			g.fieldSelectorReplace("n_"+g.cName(f)),
 			g.loopVar())
-		g.indentantionLevel++
+		g.indentationLevel++
 		defer g.closeBlock()
 	case pb.FieldDescriptorProto_LABEL_OPTIONAL:
 		// In proto2 if some "foo" field is optional the protoc-c compiler
@@ -547,7 +547,7 @@ func (g *Generator) emitFieldInitialization(f *desc.FieldDescriptor) error {
 					// keywords, the final name gets the underscore appended. If the
 					// name is "for", it gets converted to "has_for_".
 					g.fieldSelectorReplace("has_"+g.cName(f)))
-				g.indentantionLevel++
+				g.indentationLevel++
 				defer g.closeBlock()
 			}
 		}
@@ -589,7 +589,7 @@ func (g *Generator) emitFieldInitialization(f *desc.FieldDescriptor) error {
 			"\n%sif (%s != NULL) {\n",
 			g.indentation(),
 			g.fieldSelector())
-		g.indentantionLevel++
+		g.indentationLevel++
 		defer g.closeBlock()
 		if f.IsMap() {
 			err = g.emitFieldInitialization(f.GetMapValueType())
