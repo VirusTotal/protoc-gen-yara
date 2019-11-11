@@ -10,6 +10,7 @@ protoc --include_imports \
 
 syntax = "proto2";
 
+package test;
 import "yara.proto";
 
 option (yara.module_options) = {

@@ -15,7 +15,7 @@ import "yara.proto";
 
 option (yara.module_options) = {
   name : "pb_customer"
-  root_message: "acme.payments.Customer";
+  root_message: "Customer";
 };
 
 message Customer {
@@ -59,12 +59,12 @@ import "yara.proto";
 
 option (yara.module_options) = {
   name : "pb_customer"
-  root_message: "acme.payments.Customer";
+  root_message: "Customer";
 };
 ```
 
 
-This is required for `protoc-gen-yara` to be able to generate the YARA module. The `yara.proto` file contains the definitions for the module's options, like `name` and `root_message`, so it must be imported in your proto. The `name` option contains the module's name (the one that you will later use in `import` statements in your YARA rules), while `root_message` is the fully-qualified name of a message defining the top-level structure for the module. You can have multiple message definitions in your proto file, but only one can be the root message. In the example above, as the root message is `Customer` and the module is named `pb_customer`, in your YARA rules you can access fields `name` and `age` as `pb_customer.name` and `pb_customer.age` respectively.
+This is required for `protoc-gen-yara` to be able to generate the YARA module. The `yara.proto` file contains the definitions for the module's options, like `name` and `root_message`, so it must be imported in your proto. The `name` option contains the module's name (the one that you will later use in `import` statements in your YARA rules), while `root_message` is the name of a message defining the top-level structure for the module. You can have multiple message definitions in your proto file, but only one can be the root message. In the example above, as the root message is `Customer` and the module is named `pb_customer`, in your YARA rules you can access fields `name` and `age` as `pb_customer.name` and `pb_customer.age` respectively.
 
 
 ### Installing protoc-gen-yara

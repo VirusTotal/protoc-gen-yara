@@ -91,7 +91,7 @@ int module_load(
   if (module_data == NULL)
     return ERROR_SUCCESS;
 
-  Root* pb = root__unpack(&allocator, module_data_size, module_data);
+  Test__Root* pb = test__root__unpack(&allocator, module_data_size, module_data);
 
   if (pb == NULL)
     return ERROR_INVALID_MODULE_DATA;
@@ -232,7 +232,7 @@ int module_load(
   }
 
 
-  root__free_unpacked(pb, &allocator);
+  test__root__free_unpacked(pb, &allocator);
 
   return ERROR_SUCCESS;
 }

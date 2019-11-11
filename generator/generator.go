@@ -54,8 +54,7 @@ func NewGenerator() *Generator {
 //   };
 //
 // These options are required for the generator to be able to genereate the YARA
-// module. Notice that root_message must be a fully-qualified name. If your
-// protobuf is in a package, the name must be prefixed with the package name.
+// module.
 func (g *Generator) Parse(fd *desc.FileDescriptor, out io.Writer) error {
 	fileOptions := fd.GetOptions()
 	// YARA module options appear as a extension of google.protobuf.FileOptions.
@@ -81,7 +80,7 @@ func (g *Generator) Parse(fd *desc.FileDescriptor, out io.Writer) error {
 		return errors.New("could not find any YARA module options")
 	}
 	// Search for the root message type specified by the root_message option.
-	g.rootMessageType = g.fd.FindMessage(g.rootMessageName)
+	g.rootMessageType = g.findMessage(g.rootMessageName)
 	if g.rootMessageType == nil {
 		return fmt.Errorf(
 			"root message type %s not found in %s",
@@ -111,11 +110,14 @@ func (g *Generator) Parse(fd *desc.FileDescriptor, out io.Writer) error {
 	}
 
 	protoName := fd.GetName()
+	// Convert foo.bar.MyRootMessage into Foo__Bar__MyRootMessage
+	rootStruct := strings.ReplaceAll(
+		strings.Title(g.rootMessageType.GetFullyQualifiedName()), ".", "__")
 
 	return tmpl.Execute(out, templateData{
 		ModuleName:      g.moduleName,
 		IncludeName:     strings.TrimSuffix(protoName, filepath.Ext(protoName)),
-		RootStruct:      g.rootMessageName,
+		RootStruct:      rootStruct,
 		Declarations:    template.HTML(g.decl.String()),
 		Initializations: template.HTML(g.init.String()),
 	})
@@ -154,6 +156,15 @@ func (g *Generator) typeClass(t pb.FieldDescriptorProto_Type) typeClass {
 		return typeStruct
 	}
 	return typeUnsupported
+}
+
+func (g *Generator) findMessage(messageType string) *desc.MessageDescriptor {
+	for _, m := range g.fd.GetMessageTypes() {
+		if m.GetName() == messageType {
+			return m
+		}
+	}
+	return nil
 }
 
 // Returns the descriptor's name, possibly adding an underscore at the end
@@ -385,8 +396,12 @@ func (g *Generator) emitEnumInitialization(d desc.Descriptor) error {
 	indent := strings.Repeat(INDENT, g.indentationLevel)
 	for _, e := range enums {
 		for _, v := range e.GetValues() {
+			// Strip package name from the fully-qualified name.
+			n := strings.TrimPrefix(
+				v.GetFullyQualifiedName(),
+				v.GetFile().GetPackage()+".")
 			fmt.Fprintf(g.init, "%sset_integer(%d, module_object, \"%s\");\n",
-				indent, v.GetNumber(), v.GetFullyQualifiedName())
+				indent, v.GetNumber(), n)
 		}
 	}
 	for _, t := range types {
