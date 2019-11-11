@@ -531,21 +531,25 @@ func (g *Generator) emitFieldInitialization(f *desc.FieldDescriptor) error {
 	case pb.FieldDescriptorProto_LABEL_OPTIONAL:
 		// In proto2 if some "foo" field is optional the protoc-c compiler
 		// generates a "has_foo" field that indicates if the field was present
-		// in the data or not. This is done only for certain types like integers,
-		// for which there's no way of distinguishing between the default value
-		// and a missing value. In proto3 all fields are optional by definition
-		// but the "has_foo" field is not generated, missing fields will have
-		// their default value.
-		if !f.GetFile().IsProto3() && g.typeClass(f.GetType()) == typeInteger {
-			fmt.Fprintf(g.init,
-				"\n%sif (%s) {\n",
-				g.indentation(),
-				// Even if the "has_" prefix avoids any possible collision with a C
-				// keywords, the final name gets the underscore appended. If the
-				// name is "for", it gets converted to "has_for_".
-				g.fieldSelectorReplace("has_"+g.cName(f)))
-			g.indentantionLevel++
-			defer g.closeBlock()
+		// in the data or not. This is done only for scalar types, for which
+		// there's no way of distinguishing between the default value and a
+		// missing value. For strings, bytes, and messages a NULL value indicates
+		// that the field was missing. In proto3 all fields are optional but
+		// the "has_foo" field is not generated, instead missing fields will
+		// have their default value.
+		if !f.GetFile().IsProto3() {
+			switch g.typeClass(f.GetType()) {
+			case typeInteger, typeFloat:
+				fmt.Fprintf(g.init,
+					"\n%sif (%s) {\n",
+					g.indentation(),
+					// Even if the "has_" prefix avoids any possible collision with a C
+					// keywords, the final name gets the underscore appended. If the
+					// name is "for", it gets converted to "has_for_".
+					g.fieldSelectorReplace("has_"+g.cName(f)))
+				g.indentantionLevel++
+				defer g.closeBlock()
+			}
 		}
 	}
 
