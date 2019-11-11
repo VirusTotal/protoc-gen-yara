@@ -112,3 +112,4 @@ Due to YARA limitations not all protocol buffers can generate a YARA module. The
 
 - Unsigned integers are not supported, your protocol buffer can not use types `uint32` ,`uint64`, `fixed32` and `fixed64`.
 - Maps are supported as long as the key is a string, no other key types are supported.
+- Can not declare recursive structures. In Protocol Buffers you can define a message `Foo` that has a field of type `Foo`, this is not possible in YARA modules.

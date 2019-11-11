@@ -206,16 +206,31 @@ func (g *Generator) exitLoop() {
 }
 
 type field struct {
-	name       string
-	isRepeated bool
-	isMap      bool
+	name        string
+	messageType string
+	isRepeated  bool
+	isMap       bool
 }
 
-func (g *Generator) pushField(f *desc.FieldDescriptor) {
+func (g *Generator) pushField(f *desc.FieldDescriptor) error {
+	var messageType string
+	// If the field is of message type, make sure that none of its ancestors
+	// have the same type. If not, it means that we have a recursive message
+	// type.
+	if t := f.GetMessageType(); t != nil {
+		messageType = t.GetFullyQualifiedName()
+		for _, f := range g.fieldStack {
+			if f.messageType == messageType {
+				return fmt.Errorf("recursive message type: %s", messageType)
+			}
+		}
+	}
 	g.fieldStack = append(g.fieldStack, field{
-		name:       g.cName(f),
-		isRepeated: f.IsRepeated(),
-		isMap:      f.IsMap()})
+		name:        g.cName(f),
+		messageType: messageType,
+		isRepeated:  f.IsRepeated(),
+		isMap:       f.IsMap()})
+	return nil
 }
 
 func (g *Generator) popField() {
@@ -422,6 +437,9 @@ func (g *Generator) emitDictDeclaration(f *desc.FieldDescriptor) error {
 
 func (g *Generator) emitStructDeclaration(m *desc.MessageDescriptor) error {
 	for _, f := range m.GetFields() {
+		if err := g.pushField(f); err != nil {
+			return err
+		}
 		var postfix string
 		if f.IsRepeated() {
 			postfix = "_array"
@@ -462,6 +480,7 @@ func (g *Generator) emitStructDeclaration(m *desc.MessageDescriptor) error {
 				"%s has type %s, which is not supported by YARA modules",
 				f.GetName(), f.GetType())
 		}
+		g.popField()
 	}
 	return nil
 }
@@ -477,7 +496,9 @@ func (g *Generator) emitFieldInitialization(f *desc.FieldDescriptor) error {
 		defer g.exitLoop()
 	}
 
-	g.pushField(f)
+	if err := g.pushField(f); err != nil {
+		return err
+	}
 	defer g.popField()
 
 	if oneof := f.GetOneOf(); oneof != nil {
