@@ -21,7 +21,6 @@ import (
 // https://godoc.org/github.com/golang/protobuf/protoc-gen-go/descriptor#FileDescriptorProto
 type Generator struct {
 	fd               *desc.FileDescriptor
-	protoName        string
 	moduleName       string
 	rootMessageName  string
 	rootMessageType  *desc.MessageDescriptor
@@ -64,16 +63,15 @@ func (g *Generator) Parse(fd *desc.FileDescriptor, out io.Writer) error {
 		g.moduleName = opts.GetName()
 		g.rootMessageName = opts.GetRootMessage()
 		g.fd = fd
-		g.protoName = fd.GetName()
 		if g.moduleName == "" {
 			return fmt.Errorf(
 				"YARA module options found in %s, but name not specified",
-				g.protoName)
+				fd.GetName())
 		}
 		if g.rootMessageName == "" {
 			return fmt.Errorf(
 				"YARA module options found in %s, but root_message not specified",
-				g.protoName)
+				fd.GetName())
 		}
 	}
 	if g.fd == nil {
@@ -84,7 +82,7 @@ func (g *Generator) Parse(fd *desc.FileDescriptor, out io.Writer) error {
 	if g.rootMessageType == nil {
 		return fmt.Errorf(
 			"root message type %s not found in %s",
-			g.rootMessageName, g.protoName)
+			g.rootMessageName, fd.GetName())
 	}
 	if err := g.emitEnumDeclarations(g.fd); err != nil {
 		return err
@@ -224,6 +222,8 @@ type field struct {
 	isMap       bool
 }
 
+// Pushes a field in the fields stack. This stack is used to keep track of
+// where we are while generating the code for nested structures.
 func (g *Generator) pushField(f *desc.FieldDescriptor) error {
 	var messageType string
 	// If the field is of message type, make sure that none of its ancestors
@@ -245,10 +245,14 @@ func (g *Generator) pushField(f *desc.FieldDescriptor) error {
 	return nil
 }
 
+// Pops a field from the fields stack.
 func (g *Generator) popField() {
 	g.fieldStack = g.fieldStack[:len(g.fieldStack)-1]
 }
 
+// Returns true if the protobuf's definition states that this field must be
+// ignored, which is done like:
+//   int myfield = 3 [(yara.field_options).ignore = true];
 func (g *Generator) mustIgnoreField(f *desc.FieldDescriptor) bool {
 	if ext, err := proto.GetExtension(f.GetOptions(), yara.E_FieldOptions); err == nil {
 		return ext.(*yara.FieldOptions).GetIgnore()
@@ -300,13 +304,22 @@ func (g *Generator) fieldSelectorReplace(f string) string {
 func (g *Generator) fmtStr() string {
 	ff := make([]string, 0)
 	for i, f := range g.fieldStack {
-		// If the previous field in the stack is a map this is the "value"
+		// If the previous field in the stack is a map then this is the "value"
 		// field, which shouldn't appear in the format string.
 		if i >= 1 && g.fieldStack[i-1].isMap {
 			continue
 		}
-		// The order is important here, fieldStack that are a map are also an
-		// repeated, we must check for isMap first.
+		// The order is important here, fields that are maps are also repeated
+		// fields, so we need to check for isMap first. Maps are actually a
+		// repeated field of messages that have two fields, "key" and "value".
+		// In other words, this...
+		//   map<key_type, value_type> map_field = N;
+		// Is actually...
+		//   message MapFieldEntry {
+		//     key_type key = 1;
+		//     value_type value = 2;
+		//   }
+		//   repeated MapFieldEntry map_field = N;
 		if f.isMap {
 			ff = append(ff, fmt.Sprintf("%s[%%s]", f.name))
 		} else if f.isRepeated {
