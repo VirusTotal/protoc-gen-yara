@@ -9,6 +9,14 @@ message ModuleOptions {
   string root_message = 2;
 }
 
+message FieldOptions {
+  bool ignore = 1;
+}
+
 extend google.protobuf.FileOptions {
   ModuleOptions module_options = 51503;
+}
+
+extend google.protobuf.FieldOptions {
+  FieldOptions field_options = 51504;
 }

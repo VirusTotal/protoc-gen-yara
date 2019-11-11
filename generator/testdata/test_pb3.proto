@@ -61,4 +61,5 @@ message Root {
     string f_oneof_string = 20;
     MapStruct f_oneof_struct = 21;
   }
+  string f_ignored = 22 [(yara.field_options).ignore = true];
 }

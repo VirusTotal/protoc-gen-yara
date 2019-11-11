@@ -237,6 +237,13 @@ func (g *Generator) popField() {
 	g.fieldStack = g.fieldStack[:len(g.fieldStack)-1]
 }
 
+func (g *Generator) mustIgnoreField(f *desc.FieldDescriptor) bool {
+	if ext, err := proto.GetExtension(f.GetOptions(), yara.E_FieldOptions); err == nil {
+		return ext.(*yara.FieldOptions).GetIgnore()
+	}
+	return false
+}
+
 // Returns a list with the names of the N fields at the bottom of the stack,
 // ordered from bottom to top. Repeated fields will be indexed with the
 // corresponding loop variable starting with "i" for the outer loop and
@@ -437,6 +444,9 @@ func (g *Generator) emitDictDeclaration(f *desc.FieldDescriptor) error {
 
 func (g *Generator) emitStructDeclaration(m *desc.MessageDescriptor) error {
 	for _, f := range m.GetFields() {
+		if g.mustIgnoreField(f) {
+			continue
+		}
 		if err := g.pushField(f); err != nil {
 			return err
 		}
@@ -609,6 +619,9 @@ func (g *Generator) emitFieldInitialization(f *desc.FieldDescriptor) error {
 
 func (g *Generator) emitStructInitialization(d *desc.MessageDescriptor) error {
 	for _, f := range d.GetFields() {
+		if g.mustIgnoreField(f) {
+			continue
+		}
 		if err := g.emitFieldInitialization(f); err != nil {
 			return err
 		}
