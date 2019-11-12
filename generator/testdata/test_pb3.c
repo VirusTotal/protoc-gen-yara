@@ -17,12 +17,12 @@ static void _pb_free(void *allocator_data, void *pointer)
 }
 
 begin_declarations;
-  begin_struct("Struct");
-    begin_struct("Enum");
+  begin_struct("struct");
+    begin_struct("enum");
       declare_integer("FIRST");
       declare_integer("SECOND");
-    end_struct("Enum");
-  end_struct("Struct");
+    end_struct("enum");
+  end_struct("struct");
   declare_integer("f_int32");
   declare_integer("f_int64");
   declare_integer("f_sint32");
@@ -34,7 +34,7 @@ begin_declarations;
   declare_string("f_bytes");
   begin_struct("f_struct");
     declare_string("f_string");
-    declare_integer("enum_");
+    declare_integer("enum");
     begin_struct("f_nested_struct");
       declare_integer("f_int32");
       declare_string("f_string");
@@ -57,6 +57,7 @@ begin_declarations;
     declare_integer("f_int32");
     declare_integer("f_int64");
   end_struct("f_oneof_struct");
+  declare_string("f_yara_name");
 end_declarations;
 
 int module_initialize(
@@ -96,8 +97,8 @@ int module_load(
   if (pb == NULL)
     return ERROR_INVALID_MODULE_DATA;
 
-  set_integer(0, module_object, "Struct.Enum.FIRST");
-  set_integer(1, module_object, "Struct.Enum.SECOND");
+  set_integer(0, module_object, "struct.enum.FIRST");
+  set_integer(1, module_object, "struct.enum.SECOND");
   set_integer(pb->f_int32, module_object, "f_int32");
   set_integer(pb->f_int64, module_object, "f_int64");
   set_integer(pb->f_sint32, module_object, "f_sint32");
@@ -110,7 +111,7 @@ int module_load(
 
   if (pb->f_struct != NULL) {
     set_string(pb->f_struct->f_string, module_object, "f_struct.f_string");
-    set_integer(pb->f_struct->enum_, module_object, "f_struct.enum_");
+    set_integer(pb->f_struct->enum_, module_object, "f_struct.enum");
 
     if (pb->f_struct->f_nested_struct != NULL) {
       set_integer(pb->f_struct->f_nested_struct->f_int32, module_object, "f_struct.f_nested_struct.f_int32");
@@ -173,6 +174,7 @@ int module_load(
       set_integer(pb->f_oneof_struct->f_int64, module_object, "f_oneof_struct.f_int64");
     }
   }
+  set_string(pb->f_renamed, module_object, "f_yara_name");
 
 
   root__free_unpacked(pb, &allocator);

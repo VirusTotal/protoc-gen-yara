@@ -10,7 +10,16 @@ message ModuleOptions {
 }
 
 message FieldOptions {
-  bool ignore = 1;
+  string name = 1;
+  bool ignore = 2;
+}
+
+message MessageOptions {
+  string name = 1;
+}
+
+message EnumOptions {
+  string name = 1;
 }
 
 extend google.protobuf.FileOptions {
@@ -19,4 +28,12 @@ extend google.protobuf.FileOptions {
 
 extend google.protobuf.FieldOptions {
   FieldOptions field_options = 51504;
+}
+
+extend google.protobuf.MessageOptions {
+  MessageOptions message_options = 51505;
+}
+
+extend google.protobuf.EnumOptions {
+  EnumOptions enum_options = 51506;
 }

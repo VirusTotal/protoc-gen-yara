@@ -17,12 +17,12 @@ static void _pb_free(void *allocator_data, void *pointer)
 }
 
 begin_declarations;
-  begin_struct("Struct");
-    begin_struct("Enum");
+  begin_struct("struc");
+    begin_struct("enum");
       declare_integer("FIRST");
       declare_integer("SECOND");
-    end_struct("Enum");
-  end_struct("Struct");
+    end_struct("enum");
+  end_struct("struc");
   declare_integer("f_int32");
   declare_integer("f_int64");
   declare_integer("f_sint32");
@@ -34,7 +34,7 @@ begin_declarations;
   declare_string("f_bytes");
   begin_struct_array("f_struct");
     declare_string("f_string");
-    declare_integer("enum_");
+    declare_integer("enum");
     begin_struct("f_nested_struct");
       declare_integer("f_int32");
       declare_string("f_string");
@@ -57,6 +57,7 @@ begin_declarations;
     declare_integer("f_int32");
     declare_integer("f_int64");
   end_struct("f_oneof_struct");
+  declare_string("f_yara_name");
 end_declarations;
 
 int module_initialize(
@@ -96,8 +97,8 @@ int module_load(
   if (pb == NULL)
     return ERROR_INVALID_MODULE_DATA;
 
-  set_integer(0, module_object, "Struct.Enum.FIRST");
-  set_integer(1, module_object, "Struct.Enum.SECOND");
+  set_integer(0, module_object, "struc.enum.FIRST");
+  set_integer(1, module_object, "struc.enum.SECOND");
 
   if (pb->has_f_int32) {
     set_integer(pb->f_int32, module_object, "f_int32");
@@ -135,7 +136,7 @@ int module_load(
       set_string(pb->f_struct[i]->f_string, module_object, "f_struct[%i].f_string", i);
 
       if (pb->f_struct[i]->has_enum_) {
-        set_integer(pb->f_struct[i]->enum_, module_object, "f_struct[%i].enum_", i);
+        set_integer(pb->f_struct[i]->enum_, module_object, "f_struct[%i].enum", i);
       }
 
       if (pb->f_struct[i]->f_nested_struct != NULL) {
@@ -230,6 +231,7 @@ int module_load(
       }
     }
   }
+  set_string(pb->f_renamed, module_object, "f_yara_name");
 
 
   test__root_message__free_unpacked(pb, &allocator);

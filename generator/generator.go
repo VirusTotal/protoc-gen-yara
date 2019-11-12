@@ -28,7 +28,8 @@ type Generator struct {
 	init             *strings.Builder
 	loopLevel        int
 	indentationLevel int
-	fieldStack       []field
+	fieldStack       []*desc.FieldDescriptor
+	msgStack         []string
 }
 
 // NewGenerator creates an new module generator.
@@ -37,7 +38,8 @@ func NewGenerator() *Generator {
 		indentationLevel: 1,
 		decl:             &strings.Builder{},
 		init:             &strings.Builder{},
-		fieldStack:       make([]field, 0),
+		fieldStack:       make([]*desc.FieldDescriptor, 0),
+		msgStack:         make([]string, 0),
 	}
 }
 
@@ -215,33 +217,21 @@ func (g *Generator) exitLoop() {
 	g.loopLevel--
 }
 
-type field struct {
-	name        string
-	messageType string
-	isRepeated  bool
-	isMap       bool
-}
-
 // Pushes a field in the fields stack. This stack is used to keep track of
 // where we are while generating the code for nested structures.
 func (g *Generator) pushField(f *desc.FieldDescriptor) error {
-	var messageType string
 	// If the field is of message type, make sure that none of its ancestors
 	// have the same type. If not, it means that we have a recursive message
 	// type.
 	if t := f.GetMessageType(); t != nil {
-		messageType = t.GetFullyQualifiedName()
+		fqn := t.GetFullyQualifiedName()
 		for _, f := range g.fieldStack {
-			if f.messageType == messageType {
-				return fmt.Errorf("recursive message type: %s", messageType)
+			if f.GetFullyQualifiedName() == fqn {
+				return fmt.Errorf("recursive message type: %s", fqn)
 			}
 		}
 	}
-	g.fieldStack = append(g.fieldStack, field{
-		name:        g.cName(f),
-		messageType: messageType,
-		isRepeated:  f.IsRepeated(),
-		isMap:       f.IsMap()})
+	g.fieldStack = append(g.fieldStack, f)
 	return nil
 }
 
@@ -260,6 +250,21 @@ func (g *Generator) mustIgnoreField(f *desc.FieldDescriptor) bool {
 	return false
 }
 
+// Returns the name of a descriptor. By default the name is the one specied
+// by the protobuf definition, unless a YARA-specific option is used for
+// overriding the name.
+func (g *Generator) getName(d desc.Descriptor) (name string) {
+	name = d.GetName()
+	if ext, err := proto.GetExtension(d.GetOptions(), yara.E_MessageOptions); err == nil {
+		name = ext.(*yara.MessageOptions).GetName()
+	} else if ext, err := proto.GetExtension(d.GetOptions(), yara.E_FieldOptions); err == nil {
+		name = ext.(*yara.FieldOptions).GetName()
+	} else if ext, err := proto.GetExtension(d.GetOptions(), yara.E_EnumOptions); err == nil {
+		name = ext.(*yara.EnumOptions).GetName()
+	}
+	return name
+}
+
 // Returns a list with the names of the N fields at the bottom of the stack,
 // ordered from bottom to top. Repeated fields will be indexed with the
 // corresponding loop variable starting with "i" for the outer loop and
@@ -272,11 +277,11 @@ func (g *Generator) fieldNames(n int) []string {
 	loopDepth := 0
 	for i := 0; i < n; i++ {
 		f := g.fieldStack[i]
-		if f.isRepeated {
-			result[i] = fmt.Sprintf("%s[%s]", f.name, loopVars[loopDepth])
+		if f.IsRepeated() {
+			result[i] = fmt.Sprintf("%s[%s]", g.cName(f), loopVars[loopDepth])
 			loopDepth++
 		} else {
-			result[i] = f.name
+			result[i] = g.cName(f)
 		}
 	}
 	return result
@@ -306,11 +311,11 @@ func (g *Generator) fmtStr() string {
 	for i, f := range g.fieldStack {
 		// If the previous field in the stack is a map then this is the "value"
 		// field, which shouldn't appear in the format string.
-		if i >= 1 && g.fieldStack[i-1].isMap {
+		if i >= 1 && g.fieldStack[i-1].IsMap() {
 			continue
 		}
 		// The order is important here, fields that are maps are also repeated
-		// fields, so we need to check for isMap first. Maps are actually a
+		// fields, so we need to check for IsMap() first. Maps are actually a
 		// repeated field of messages that have two fields, "key" and "value".
 		// In other words, this...
 		//   map<key_type, value_type> map_field = N;
@@ -320,12 +325,12 @@ func (g *Generator) fmtStr() string {
 		//     value_type value = 2;
 		//   }
 		//   repeated MapFieldEntry map_field = N;
-		if f.isMap {
-			ff = append(ff, fmt.Sprintf("%s[%%s]", f.name))
-		} else if f.isRepeated {
-			ff = append(ff, fmt.Sprintf("%s[%%i]", f.name))
+		if f.IsMap() {
+			ff = append(ff, fmt.Sprintf("%s[%%s]", g.getName(f)))
+		} else if f.IsRepeated() {
+			ff = append(ff, fmt.Sprintf("%s[%%i]", g.getName(f)))
 		} else {
-			ff = append(ff, f.name)
+			ff = append(ff, g.getName(f))
 		}
 	}
 	return strings.Join(ff, ".")
@@ -335,9 +340,9 @@ func (g *Generator) fmtArgsStr() string {
 	ff := make([]string, 0)
 	j := 0
 	for i, f := range g.fieldStack {
-		if f.isMap {
+		if f.IsMap() {
 			ff = append(ff, g.fieldSelectorN(i+1)+"->key")
-		} else if f.isRepeated {
+		} else if f.IsRepeated() {
 			ff = append(ff, loopVars[j])
 			j++
 		}
@@ -350,44 +355,44 @@ func (g *Generator) fmtArgsStr() string {
 
 func (g *Generator) emitEnumDeclarations(d desc.Descriptor) error {
 	var enums []*desc.EnumDescriptor
-	var types []*desc.MessageDescriptor
+	var messages []*desc.MessageDescriptor
 	switch v := d.(type) {
 	case *desc.FileDescriptor:
-		v.GetEnumTypes()
 		enums = v.GetEnumTypes()
-		types = v.GetMessageTypes()
+		messages = v.GetMessageTypes()
 	case *desc.MessageDescriptor:
 		enums = v.GetNestedEnumTypes()
-		types = v.GetNestedMessageTypes()
+		messages = v.GetNestedMessageTypes()
 	default:
 		panic("Expecting *EnumDescriptor or *MessageDescriptor")
 	}
 	for _, e := range enums {
 		fmt.Fprintf(g.decl,
 			"%sbegin_struct(\"%s\");\n",
-			g.indentation(), g.cName(e))
+			g.indentation(), g.getName(e))
 		for _, v := range e.GetValues() {
 			fmt.Fprintf(g.decl,
 				"%s%sdeclare_integer(\"%s\");\n",
-				g.indentation(), INDENT, g.cName(v))
+				g.indentation(), INDENT, g.getName(v))
 		}
 		fmt.Fprintf(g.decl,
 			"%send_struct(\"%s\");\n",
-			g.indentation(), g.cName(e))
+			g.indentation(), g.getName(e))
 	}
-	for _, t := range types {
-		if len(t.GetNestedEnumTypes()) > 0 {
+	for _, m := range messages {
+		if len(m.GetNestedEnumTypes()) > 0 {
+			name := g.getName(m)
 			fmt.Fprintf(g.decl,
 				"%sbegin_struct(\"%s\");\n",
-				g.indentation(), g.cName(t))
+				g.indentation(), name)
 			g.indentationLevel++
-			if err := g.emitEnumDeclarations(t); err != nil {
+			if err := g.emitEnumDeclarations(m); err != nil {
 				return err
 			}
 			g.indentationLevel--
 			fmt.Fprintf(g.decl,
 				"%send_struct(\"%s\");\n",
-				g.indentation(), g.cName(t))
+				g.indentation(), name)
 		}
 	}
 	return nil
@@ -395,32 +400,32 @@ func (g *Generator) emitEnumDeclarations(d desc.Descriptor) error {
 
 func (g *Generator) emitEnumInitialization(d desc.Descriptor) error {
 	var enums []*desc.EnumDescriptor
-	var types []*desc.MessageDescriptor
+	var messages []*desc.MessageDescriptor
 	switch v := d.(type) {
 	case *desc.FileDescriptor:
 		enums = v.GetEnumTypes()
-		types = v.GetMessageTypes()
+		messages = v.GetMessageTypes()
 	case *desc.MessageDescriptor:
 		enums = v.GetNestedEnumTypes()
-		types = v.GetNestedMessageTypes()
+		messages = v.GetNestedMessageTypes()
 	default:
 		panic("Expecting *EnumDescriptor or *MessageDescriptor")
 	}
 	indent := strings.Repeat(INDENT, g.indentationLevel)
 	for _, e := range enums {
 		for _, v := range e.GetValues() {
-			// Strip package name from the fully-qualified name.
-			n := strings.TrimPrefix(
-				v.GetFullyQualifiedName(),
-				v.GetFile().GetPackage()+".")
+			nameParts := append(g.msgStack, g.getName(e), g.getName(v))
+			name := strings.Join(nameParts, ".")
 			fmt.Fprintf(g.init, "%sset_integer(%d, module_object, \"%s\");\n",
-				indent, v.GetNumber(), n)
+				indent, v.GetNumber(), name)
 		}
 	}
-	for _, t := range types {
-		if err := g.emitEnumInitialization(t); err != nil {
+	for _, m := range messages {
+		g.msgStack = append(g.msgStack, g.getName(m)) // push
+		if err := g.emitEnumInitialization(m); err != nil {
 			return err
 		}
+		g.msgStack = g.msgStack[:len(g.msgStack)-1] // pop
 	}
 	return nil
 }
@@ -442,19 +447,19 @@ func (g *Generator) emitDictDeclaration(f *desc.FieldDescriptor) error {
 	case typeInteger:
 		fmt.Fprintf(g.decl,
 			"%sdeclare_integer_dictionary(\"%s\");\n",
-			g.indentation(), g.cName(f))
+			g.indentation(), g.getName(f))
 	case typeFloat:
 		fmt.Fprintf(g.decl,
 			"%sdeclare_float_dictionary(\"%s\");\n",
-			g.indentation(), g.cName(f))
+			g.indentation(), g.getName(f))
 	case typeString, typeBytes:
 		fmt.Fprintf(g.decl,
 			"%sdeclare_string_dictionary(\"%s\");\n",
-			g.indentation(), g.cName(f))
+			g.indentation(), g.getName(f))
 	case typeStruct:
 		fmt.Fprintf(g.decl,
 			"%sbegin_struct_dictionary(\"%s\");\n",
-			g.indentation(), g.cName(f))
+			g.indentation(), g.getName(f))
 		g.indentationLevel++
 		if err := g.emitStructDeclaration(vt.GetMessageType()); err != nil {
 			return err
@@ -462,7 +467,7 @@ func (g *Generator) emitDictDeclaration(f *desc.FieldDescriptor) error {
 		g.indentationLevel--
 		fmt.Fprintf(g.decl,
 			"%send_struct_dictionary(\"%s\");\n",
-			g.indentation(), g.cName(f))
+			g.indentation(), g.getName(f))
 	default:
 		return fmt.Errorf(
 			"%s has type %s, which is not supported by YARA modules",
@@ -487,15 +492,15 @@ func (g *Generator) emitStructDeclaration(m *desc.MessageDescriptor) error {
 		case typeInteger:
 			fmt.Fprintf(g.decl,
 				"%sdeclare_integer%s(\"%s\");\n",
-				g.indentation(), postfix, g.cName(f))
+				g.indentation(), postfix, g.getName(f))
 		case typeFloat:
 			fmt.Fprintf(g.decl,
 				"%sdeclare_float%s(\"%s\");\n",
-				g.indentation(), postfix, g.cName(f))
+				g.indentation(), postfix, g.getName(f))
 		case typeString, typeBytes:
 			fmt.Fprintf(g.decl,
 				"%sdeclare_string%s(\"%s\");\n",
-				g.indentation(), postfix, g.cName(f))
+				g.indentation(), postfix, g.getName(f))
 		case typeStruct:
 			if f.IsMap() {
 				if err := g.emitDictDeclaration(f); err != nil {
@@ -504,7 +509,7 @@ func (g *Generator) emitStructDeclaration(m *desc.MessageDescriptor) error {
 			} else {
 				fmt.Fprintf(g.decl,
 					"%sbegin_struct%s(\"%s\");\n",
-					g.indentation(), postfix, g.cName(f))
+					g.indentation(), postfix, g.getName(f))
 				g.indentationLevel++
 				if err := g.emitStructDeclaration(f.GetMessageType()); err != nil {
 					return err
@@ -512,7 +517,7 @@ func (g *Generator) emitStructDeclaration(m *desc.MessageDescriptor) error {
 				g.indentationLevel--
 				fmt.Fprintf(g.decl,
 					"%send_struct%s(\"%s\");\n",
-					g.indentation(), postfix, g.cName(f))
+					g.indentation(), postfix, g.getName(f))
 			}
 		default:
 			return fmt.Errorf(

@@ -18,8 +18,10 @@ option (yara.module_options) = {
 };
 
 message Struct {
+  option (yara.message_options).name = "struct";
   string f_string = 1;
   enum Enum {
+    option (yara.enum_options).name = "enum";
     FIRST = 0;
     SECOND = 1;
   }
@@ -62,4 +64,5 @@ message Root {
     MapStruct f_oneof_struct = 21;
   }
   string f_ignored = 22 [(yara.field_options).ignore = true];
+  string f_renamed = 23 [(yara.field_options).name = "f_yara_name"];
 }
