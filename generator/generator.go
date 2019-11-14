@@ -20,26 +20,45 @@ import (
 // https://godoc.org/github.com/jhump/protoreflect/desc#FileDescriptor
 // https://godoc.org/github.com/golang/protobuf/protoc-gen-go/descriptor#FileDescriptorProto
 type Generator struct {
-	fd               *desc.FileDescriptor
-	moduleName       string
-	rootMessageName  string
-	rootMessageType  *desc.MessageDescriptor
-	decl             *strings.Builder
-	init             *strings.Builder
-	loopLevel        int
+	// String builders used for building declarations and initializations. The
+	// resulting strings are then passed to a template that builds the final
+	// code.
+	decl *strings.Builder
+	init *strings.Builder
+
+	// Current loop level. Used for determining the loop variable (i, j, k, etc)
+	// that should be used while generating the code.
+	loopLevel int
+
+	// Current identation level.
 	indentationLevel int
-	fieldStack       []*desc.FieldDescriptor
-	msgStack         []string
+
+	// This map contains the FileDescriptor of every .proto file that defines
+	// some enum type used in a message. The keys are the fully-qualified name
+	// of descriptors. This map is populated by emitStructDeclaration.
+	filesDeclaringEnums map[string]*desc.FileDescriptor
+
+	// This map contains the enum types that has been actually used as the
+	// type of some field. The keys are the fully-qualified names of the enum
+	// types, and values are always true, so the presence in the map indicates
+	// that the enum type is being used. This map is populated by emitStructDeclaration
+	// and used later by emitEnumDeclaration and emitEnumInitialization.
+	usedEnums map[string]bool
+
+	fieldStack []*desc.FieldDescriptor
+	msgStack   []string
 }
 
 // NewGenerator creates an new module generator.
 func NewGenerator() *Generator {
 	return &Generator{
-		indentationLevel: 1,
-		decl:             &strings.Builder{},
-		init:             &strings.Builder{},
-		fieldStack:       make([]*desc.FieldDescriptor, 0),
-		msgStack:         make([]string, 0),
+		indentationLevel:    1,
+		decl:                &strings.Builder{},
+		init:                &strings.Builder{},
+		filesDeclaringEnums: make(map[string]*desc.FileDescriptor),
+		usedEnums:           make(map[string]bool),
+		fieldStack:          make([]*desc.FieldDescriptor, 0),
+		msgStack:            make([]string, 0),
 	}
 }
 
@@ -58,45 +77,53 @@ func NewGenerator() *Generator {
 // module.
 func (g *Generator) Parse(fd *desc.FileDescriptor, out io.Writer) error {
 	fileOptions := fd.GetOptions()
+	var rootMessageType *desc.MessageDescriptor
+	var rootMessageName string
+	var moduleName string
 	// YARA module options appear as a extension of google.protobuf.FileOptions.
 	// E_ModuleOptions provides the description for the extension.
 	if ext, err := proto.GetExtension(fileOptions, yara.E_ModuleOptions); err == nil {
 		opts := ext.(*yara.ModuleOptions)
-		g.moduleName = opts.GetName()
-		g.rootMessageName = opts.GetRootMessage()
-		g.fd = fd
-		if g.moduleName == "" {
+		moduleName = opts.GetName()
+		rootMessageName = opts.GetRootMessage()
+		if moduleName == "" {
 			return fmt.Errorf(
 				"YARA module options found in %s, but name not specified",
 				fd.GetName())
 		}
-		if g.rootMessageName == "" {
+		if rootMessageName == "" {
 			return fmt.Errorf(
 				"YARA module options found in %s, but root_message not specified",
 				fd.GetName())
 		}
 	}
-	if g.fd == nil {
+	if fd == nil {
 		return errors.New("could not find any YARA module options")
 	}
 	// Search for the root message type specified by the root_message option.
-	g.rootMessageType = g.findMessage(g.rootMessageName)
-	if g.rootMessageType == nil {
+	rootMessageType = g.findMessage(fd, rootMessageName)
+	if rootMessageType == nil {
 		return fmt.Errorf(
 			"root message type %s not found in %s",
-			g.rootMessageName, fd.GetName())
+			rootMessageName, fd.GetName())
 	}
-	if err := g.emitEnumDeclarations(g.fd); err != nil {
+	if err := g.emitStructDeclaration(rootMessageType); err != nil {
 		return err
 	}
-	if err := g.emitEnumInitialization(g.fd); err != nil {
+	if err := g.emitStructInitialization(rootMessageType); err != nil {
 		return err
 	}
-	if err := g.emitStructDeclaration(g.rootMessageType); err != nil {
-		return err
+	b := &strings.Builder{}
+	for _, f := range g.filesDeclaringEnums {
+		if err := g.emitEnumDeclarations(f, b); err != nil {
+			return err
+		}
 	}
-	if err := g.emitStructInitialization(g.rootMessageType); err != nil {
-		return err
+	g.decl.WriteString(b.String())
+	for _, f := range g.filesDeclaringEnums {
+		if err := g.emitEnumInitialization(f); err != nil {
+			return err
+		}
 	}
 	// Build template used for generating the final code.
 	tmpl, err := template.New("yara_module").
@@ -112,10 +139,10 @@ func (g *Generator) Parse(fd *desc.FileDescriptor, out io.Writer) error {
 	protoName := fd.GetName()
 	// Convert foo.bar.MyRootMessage into Foo__Bar__MyRootMessage
 	rootStruct := strings.ReplaceAll(
-		strings.Title(g.rootMessageType.GetFullyQualifiedName()), ".", "__")
+		strings.Title(rootMessageType.GetFullyQualifiedName()), ".", "__")
 
 	return tmpl.Execute(out, templateData{
-		ModuleName:      g.moduleName,
+		ModuleName:      moduleName,
 		IncludeName:     strings.TrimSuffix(protoName, filepath.Ext(protoName)),
 		RootStruct:      rootStruct,
 		Declarations:    template.HTML(g.decl.String()),
@@ -158,8 +185,8 @@ func (g *Generator) typeClass(t pb.FieldDescriptorProto_Type) typeClass {
 	return typeUnsupported
 }
 
-func (g *Generator) findMessage(messageType string) *desc.MessageDescriptor {
-	for _, m := range g.fd.GetMessageTypes() {
+func (g *Generator) findMessage(fd *desc.FileDescriptor, messageType string) *desc.MessageDescriptor {
+	for _, m := range fd.GetMessageTypes() {
 		if m.GetName() == messageType {
 			return m
 		}
@@ -353,7 +380,7 @@ func (g *Generator) fmtArgsStr() string {
 	return ", " + strings.Join(ff, ", ")
 }
 
-func (g *Generator) emitEnumDeclarations(d desc.Descriptor) error {
+func (g *Generator) emitEnumDeclarations(d desc.Descriptor, out *strings.Builder) error {
 	var enums []*desc.EnumDescriptor
 	var messages []*desc.MessageDescriptor
 	switch v := d.(type) {
@@ -367,32 +394,38 @@ func (g *Generator) emitEnumDeclarations(d desc.Descriptor) error {
 		panic("Expecting *EnumDescriptor or *MessageDescriptor")
 	}
 	for _, e := range enums {
-		fmt.Fprintf(g.decl,
-			"%sbegin_struct(\"%s\");\n",
-			g.indentation(), g.getName(e))
-		for _, v := range e.GetValues() {
-			fmt.Fprintf(g.decl,
-				"%s%sdeclare_integer(\"%s\");\n",
-				g.indentation(), INDENT, g.getName(v))
+		// Emit enum declaration only if some field has this enum type. Enums
+		// declared in the protobuf definiton but not used, are not included
+		// in the YARA module.
+		if used := g.usedEnums[e.GetFullyQualifiedName()]; used {
+			fmt.Fprintf(out,
+				"%sbegin_struct(\"%s\");\n",
+				g.indentation(), g.getName(e))
+			for _, v := range e.GetValues() {
+				fmt.Fprintf(out,
+					"%s%sdeclare_integer(\"%s\");\n",
+					g.indentation(), INDENT, g.getName(v))
+			}
+			fmt.Fprintf(out,
+				"%send_struct(\"%s\");\n",
+				g.indentation(), g.getName(e))
 		}
-		fmt.Fprintf(g.decl,
-			"%send_struct(\"%s\");\n",
-			g.indentation(), g.getName(e))
 	}
 	for _, m := range messages {
-		if len(m.GetNestedEnumTypes()) > 0 {
-			name := g.getName(m)
-			fmt.Fprintf(g.decl,
+		b := &strings.Builder{}
+		g.indentationLevel++
+		if err := g.emitEnumDeclarations(m, b); err != nil {
+			return err
+		}
+		g.indentationLevel--
+		if b.Len() > 0 {
+			fmt.Fprintf(out,
 				"%sbegin_struct(\"%s\");\n",
-				g.indentation(), name)
-			g.indentationLevel++
-			if err := g.emitEnumDeclarations(m); err != nil {
-				return err
-			}
-			g.indentationLevel--
-			fmt.Fprintf(g.decl,
+				g.indentation(), g.getName(m))
+			out.WriteString(b.String())
+			fmt.Fprintf(out,
 				"%send_struct(\"%s\");\n",
-				g.indentation(), name)
+				g.indentation(), g.getName(m))
 		}
 	}
 	return nil
@@ -413,11 +446,13 @@ func (g *Generator) emitEnumInitialization(d desc.Descriptor) error {
 	}
 	indent := strings.Repeat(INDENT, g.indentationLevel)
 	for _, e := range enums {
-		for _, v := range e.GetValues() {
-			nameParts := append(g.msgStack, g.getName(e), g.getName(v))
-			name := strings.Join(nameParts, ".")
-			fmt.Fprintf(g.init, "%sset_integer(%d, module_object, \"%s\");\n",
-				indent, v.GetNumber(), name)
+		if used := g.usedEnums[e.GetFullyQualifiedName()]; used {
+			for _, v := range e.GetValues() {
+				nameParts := append(g.msgStack, g.getName(e), g.getName(v))
+				name := strings.Join(nameParts, ".")
+				fmt.Fprintf(g.init, "%sset_integer(%d, module_object, \"%s\");\n",
+					indent, v.GetNumber(), name)
+			}
 		}
 	}
 	for _, m := range messages {
@@ -487,6 +522,11 @@ func (g *Generator) emitStructDeclaration(m *desc.MessageDescriptor) error {
 		var postfix string
 		if f.IsRepeated() {
 			postfix = "_array"
+		}
+		if f.GetType() == pb.FieldDescriptorProto_TYPE_ENUM {
+			file := f.GetFile()
+			g.filesDeclaringEnums[file.GetFullyQualifiedName()] = file
+			g.usedEnums[f.GetEnumType().GetFullyQualifiedName()] = true
 		}
 		switch g.typeClass(f.GetType()) {
 		case typeInteger:

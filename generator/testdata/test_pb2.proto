@@ -38,6 +38,12 @@ message Struct {
 message MapStruct {
   optional int32 f_int32 = 1;
   optional int64 f_int64 = 2;
+  enum Enum {
+    option (yara.enum_options).name = "enum";
+    FOO = 0;
+    BAR = 1;
+  }
+  optional Enum f_enum = 3;
 }
 
 message RootMessage {
