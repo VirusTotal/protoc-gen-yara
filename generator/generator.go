@@ -524,7 +524,7 @@ func (g *Generator) emitStructDeclaration(m *desc.MessageDescriptor) error {
 			postfix = "_array"
 		}
 		if f.GetType() == pb.FieldDescriptorProto_TYPE_ENUM {
-			file := f.GetFile()
+			file := f.GetEnumType().GetFile()
 			g.filesDeclaringEnums[file.GetFullyQualifiedName()] = file
 			g.usedEnums[f.GetEnumType().GetFullyQualifiedName()] = true
 		}
