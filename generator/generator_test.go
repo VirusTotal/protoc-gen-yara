@@ -14,11 +14,11 @@ import (
 
 func loadFile(t *testing.T, name string) []byte {
 	path := filepath.Join("testdata", name)
-	bytes, err := ioutil.ReadFile(path)
+	b, err := ioutil.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return bytes
+	return b
 }
 
 func TestProto2(t *testing.T) {
@@ -31,8 +31,8 @@ func TestProto2(t *testing.T) {
 
 	out := &bytes.Buffer{}
 	g := NewGenerator()
-	g.Parse(fd, out)
-
+	err = g.Parse(fd, out)
+	assert.NoError(t, err)
 	assert.Equal(t, string(loadFile(t, "test_pb2.c")), out.String())
 }
 
@@ -46,7 +46,7 @@ func TestProto3(t *testing.T) {
 
 	out := &bytes.Buffer{}
 	g := NewGenerator()
-	g.Parse(fd, out)
-
+	err = g.Parse(fd, out)
+	assert.NoError(t, err)
 	assert.Equal(t, string(loadFile(t, "test_pb3.c")), out.String())
 }

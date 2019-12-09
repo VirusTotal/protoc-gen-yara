@@ -30,7 +30,7 @@ type Generator struct {
 	// that should be used while generating the code.
 	loopLevel int
 
-	// Current identation level.
+	// Current indentation level.
 	indentationLevel int
 
 	// This map contains the FileDescriptor of every .proto file that defines
@@ -73,7 +73,7 @@ func NewGenerator() *Generator {
 //	   root_message: "FooMessage";
 //   };
 //
-// These options are required for the generator to be able to genereate the YARA
+// These options are required for the generator to be able to generate the YARA
 // module.
 func (g *Generator) Parse(fd *desc.FileDescriptor, out io.Writer) error {
 	fileOptions := fd.GetOptions()
@@ -395,7 +395,7 @@ func (g *Generator) emitEnumDeclarations(d desc.Descriptor, out *strings.Builder
 	}
 	for _, e := range enums {
 		// Emit enum declaration only if some field has this enum type. Enums
-		// declared in the protobuf definiton but not used, are not included
+		// declared in the protobuf definition but not used, are not included
 		// in the YARA module.
 		if used := g.usedEnums[e.GetFullyQualifiedName()]; used {
 			fmt.Fprintf(out,
