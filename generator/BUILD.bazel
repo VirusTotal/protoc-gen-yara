@@ -1,0 +1,34 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "go_default_library",
+    srcs = [
+        "case.go",
+        "generator.go",
+        "template.go",
+    ],
+    importpath = "github.com/VirusTotal/protoc-gen-yara/generator",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pb:go_default_library",
+        "@com_github_golang_protobuf//proto:go_default_library",
+        "@com_github_jhump_protoreflect//desc:go_default_library",
+        "@io_bazel_rules_go//proto/wkt:descriptor_go_proto",
+    ],
+)
+
+go_test(
+    name = "go_default_test",
+    srcs = [
+        "case_test.go",
+        "generator_test.go",
+    ],
+    data = glob(["testdata/**"]),
+    embed = [":go_default_library"],
+    deps = [
+        "@com_github_golang_protobuf//proto:go_default_library",
+        "@com_github_jhump_protoreflect//desc:go_default_library",
+        "@com_github_stretchr_testify//assert:go_default_library",
+        "@io_bazel_rules_go//proto/wkt:descriptor_go_proto",
+    ],
+)

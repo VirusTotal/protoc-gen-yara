@@ -1,1 +1,2 @@
 protoc-gen-yara
+bazel-*

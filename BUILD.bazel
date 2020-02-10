@@ -1,0 +1,26 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@bazel_gazelle//:def.bzl", "gazelle")
+
+# gazelle:prefix github.com/VirusTotal/protoc-gen-yara
+# gazelle:exclude example
+# gazelle:exclude generator/testdata
+gazelle(name = "gazelle")
+
+go_library(
+    name = "go_default_library",
+    srcs = ["main.go"],
+    importpath = "github.com/VirusTotal/protoc-gen-yara",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//generator:go_default_library",
+        "//pb:go_default_library",
+        "@com_github_golang_protobuf//proto:go_default_library",
+        "@com_github_jhump_goprotoc//plugins:go_default_library",
+    ],
+)
+
+go_binary(
+    name = "protoc-gen-yara",
+    embed = [":go_default_library"],
+    visibility = ["//visibility:public"],
+)

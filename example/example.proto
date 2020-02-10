@@ -4,7 +4,7 @@ import "yara.proto";
 
 option (yara.module_options) = {
   name : "pb_person"
-  root_message: "Person";
+  root_message: "Person"
 };
 
 
