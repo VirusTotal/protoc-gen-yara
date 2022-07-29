@@ -170,7 +170,9 @@ func (g *Generator) typeClass(t pb.FieldDescriptorProto_Type) typeClass {
 		pb.FieldDescriptorProto_TYPE_SINT32,
 		pb.FieldDescriptorProto_TYPE_SINT64,
 		pb.FieldDescriptorProto_TYPE_SFIXED32,
-		pb.FieldDescriptorProto_TYPE_SFIXED64:
+		pb.FieldDescriptorProto_TYPE_SFIXED64,
+		pb.FieldDescriptorProto_TYPE_FIXED32,
+		pb.FieldDescriptorProto_TYPE_UINT32:
 		return typeInteger
 	case pb.FieldDescriptorProto_TYPE_STRING:
 		return typeString
@@ -277,7 +279,7 @@ func (g *Generator) mustIgnoreField(f *desc.FieldDescriptor) bool {
 	return false
 }
 
-// Returns the name of a descriptor. By default the name is the one specied
+// Returns the name of a descriptor. By default the name is the one specified
 // by the protobuf definition, unless a YARA-specific option is used for
 // overriding the name.
 func (g *Generator) getName(d desc.Descriptor) (name string) {

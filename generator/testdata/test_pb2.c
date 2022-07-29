@@ -20,8 +20,10 @@ static void _pb_free(void *allocator_data, void *pointer)
 begin_declarations;
   declare_integer("f_int32");
   declare_integer("f_int64");
+  declare_integer("f_uint32");
   declare_integer("f_sint32");
   declare_integer("f_sint64");
+  declare_integer("f_fixed32");
   declare_integer("f_sfixed32");
   declare_integer("f_sfixed64");
   declare_integer("f_bool");
@@ -115,12 +117,20 @@ int module_load(
     set_integer(pb->f_int64, module_object, "f_int64");
   }
 
+  if (pb->has_f_uint32) {
+    set_integer(pb->f_uint32, module_object, "f_uint32");
+  }
+
   if (pb->has_f_sint32) {
     set_integer(pb->f_sint32, module_object, "f_sint32");
   }
 
   if (pb->has_f_sint64) {
     set_integer(pb->f_sint64, module_object, "f_sint64");
+  }
+
+  if (pb->has_f_fixed32) {
+    set_integer(pb->f_fixed32, module_object, "f_fixed32");
   }
 
   if (pb->has_f_sfixed32) {

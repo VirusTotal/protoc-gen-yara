@@ -92,7 +92,7 @@ apt install protobuf-compiler protobuf-c-compiler libprotobuf-c-dev
 brew install protobuf protobuf-c
 ```
 
-After installing `protoc-gen-yara` and its pre-requisites you should have `protoc`, `protoc-gen-c` and `proto-c-yara` in your path.
+After installing `protoc-gen-yara` and its pre-requisites you should have `protoc`, `protoc-gen-c` and `protoc-gen-yara` in your path.
 
 Now, from the `protocol-gen-yara` directory use the following command for generating a YARA module based in `example.proto`:
 
@@ -112,7 +112,7 @@ This command will generate the following files:
 
 Due to YARA limitations not all protocol buffers can generate a YARA module. The currently existing limitations are:
 
-- Unsigned integers are not supported, your protocol buffer can not use types `uint32` ,`uint64`, `fixed32` and `fixed64`.
+- 64-bits unsigned integers are not supported, your protocol buffer can not use types `uint64`, `fixed64`.
 - Maps are supported as long as the key is a string, no other key types are supported.
 - Can not declare recursive structures. In Protocol Buffers you can define a message `Foo` that has a field of type `Foo`, this is not possible in YARA modules.
 
