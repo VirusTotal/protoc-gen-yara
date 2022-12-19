@@ -452,7 +452,7 @@ func (g *Generator) emitEnumInitialization(d desc.Descriptor) error {
 			for _, v := range e.GetValues() {
 				nameParts := append(g.msgStack, g.getName(e), g.getName(v))
 				name := strings.Join(nameParts, ".")
-				fmt.Fprintf(g.init, "%sset_integer(%d, module_object, \"%s\");\n",
+				fmt.Fprintf(g.init, "%syr_set_integer(%d, module_object, \"%s\");\n",
 					indent, v.GetNumber(), name)
 			}
 		}
@@ -642,28 +642,28 @@ func (g *Generator) emitFieldInitialization(f *desc.FieldDescriptor) error {
 	switch g.typeClass(f.GetType()) {
 	case typeInteger:
 		fmt.Fprintf(g.init,
-			"%sset_integer(%s, module_object, \"%s\"%s);\n",
+			"%syr_set_integer(%s, module_object, \"%s\"%s);\n",
 			g.indentation(),
 			g.fieldSelector(),
 			g.fmtStr(),
 			g.fmtArgsStr())
 	case typeFloat:
 		fmt.Fprintf(g.init,
-			"%sset_float(%s, module_object, \"%s\"%s);\n",
+			"%syr_set_float(%s, module_object, \"%s\"%s);\n",
 			g.indentation(),
 			g.fieldSelector(),
 			g.fmtStr(),
 			g.fmtArgsStr())
 	case typeString:
 		fmt.Fprintf(g.init,
-			"%sset_string(%s, module_object, \"%s\"%s);\n",
+			"%syr_set_string(%s, module_object, \"%s\"%s);\n",
 			g.indentation(),
 			g.fieldSelector(),
 			g.fmtStr(),
 			g.fmtArgsStr())
 	case typeBytes:
 		fmt.Fprintf(g.init,
-			"%sset_sized_string((const char *) %s.data, %s.len, module_object, \"%s\"%s);\n",
+			"%syr_set_sized_string((const char *) %s.data, %s.len, module_object, \"%s\"%s);\n",
 			g.indentation(),
 			g.fieldSelector(),
 			g.fieldSelector(),
