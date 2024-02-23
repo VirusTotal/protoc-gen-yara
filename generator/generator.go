@@ -68,9 +68,11 @@ func NewGenerator() *Generator {
 //
 //   import "yara.proto"
 //
+//   package "foo"
+//
 //   option (yara.module_options) = {
-//	   name : "foomodule"
-//	   root_message: "FooMessage";
+//	   name : "foo"
+//	   root_message: "foo.FooMessage";
 //   };
 //
 // These options are required for the generator to be able to generate the YARA
@@ -189,7 +191,7 @@ func (g *Generator) typeClass(t pb.FieldDescriptorProto_Type) typeClass {
 
 func (g *Generator) findMessage(fd *desc.FileDescriptor, messageType string) *desc.MessageDescriptor {
 	for _, m := range fd.GetMessageTypes() {
-		if m.GetName() == messageType {
+		if m.GetFullyQualifiedName() == messageType {
 			return m
 		}
 	}
