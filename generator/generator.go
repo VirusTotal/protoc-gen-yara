@@ -289,7 +289,9 @@ func (g *Generator) getName(d desc.Descriptor) (name string) {
 	if ext, err := proto.GetExtension(d.GetOptions(), yara.E_MessageOptions); err == nil {
 		name = ext.(*yara.MessageOptions).GetName()
 	} else if ext, err := proto.GetExtension(d.GetOptions(), yara.E_FieldOptions); err == nil {
-		name = ext.(*yara.FieldOptions).GetName()
+		if ext.(*yara.FieldOptions).GetName() != "" {
+			name = ext.(*yara.FieldOptions).GetName()
+		}
 	} else if ext, err := proto.GetExtension(d.GetOptions(), yara.E_EnumOptions); err == nil {
 		name = ext.(*yara.EnumOptions).GetName()
 	}

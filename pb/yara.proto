@@ -10,7 +10,9 @@ message ModuleOptions {
 }
 
 message FieldOptions {
+  // Name of the field in YARA rules. Ignored if empty.
   string name = 1;
+
   bool ignore = 2;
 }
 
